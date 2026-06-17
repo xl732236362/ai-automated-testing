@@ -1,0 +1,17 @@
+{
+  "device_uri": "Android://127.0.0.1:5037/device-id",
+  "package_name": "com.example.game",
+  "max_steps": 50,
+  "mission": {
+    "type": "free_explore",
+    "goal": "Explore the App/Game and summarize screens and features.",
+    "targets": [],
+    "success_criteria": []
+  },
+  "model": "claude-opus-4-8",
+  "output_root": "game_reverse/outputs/sessions",
+  "allowed_actions": ["screenshot", "wait", "back"],
+  "recent_steps": 5,
+  "llm_retry_count": 1,
+  "consecutive_failure_limit": 3
+}
