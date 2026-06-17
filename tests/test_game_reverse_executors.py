@@ -117,14 +117,54 @@ class TestExecutorCommandBuilders(unittest.TestCase):
         }
 
     def test_codex_builds_argument_list_without_shell_string(self):
-        executor = CodexExecExecutor(project_root=os.getcwd())
+        executor = CodexExecExecutor(
+            project_root=os.getcwd(),
+            enabled=True,
+            which=lambda command: command,
+        )
         prompt = executor.build_prompt(self.payload(), config=None)
+        final_message_path = os.path.join(os.getcwd(), "last-message.txt")
 
-        args = executor.build_command(prompt, repo_root=os.getcwd())
+        args = executor.build_command(
+            prompt,
+            repo_root=os.getcwd(),
+            final_message_path=final_message_path,
+        )
 
-        self.assertEqual(args[:5], ["codex", "exec", "--cd", os.path.abspath(os.getcwd()), "--json"])
-        self.assertEqual(args[5], prompt)
+        self.assertEqual(args[:7], [
+            "codex",
+            "exec",
+            "--cd",
+            os.path.abspath(os.getcwd()),
+            "--sandbox",
+            "workspace-write",
+            "--json",
+        ])
+        self.assertIn("--output-last-message", args)
+        self.assertEqual(args[args.index("--output-last-message") + 1], final_message_path)
+        self.assertEqual(args[-1], prompt)
+        self.assertNotIn("--dangerously-bypass-approvals-and-sandbox", args)
         self.assertTrue(all(isinstance(part, str) for part in args))
+
+    def test_codex_command_includes_profile_and_model_when_configured(self):
+        executor = CodexExecExecutor(
+            project_root=os.getcwd(),
+            enabled=True,
+            profile="local",
+            model="gpt-5.1-codex",
+            which=lambda command: command,
+        )
+        prompt = executor.build_prompt(self.payload(), config=None)
+        final_message_path = os.path.join(os.getcwd(), "last-message.txt")
+
+        args = executor.build_command(
+            prompt,
+            repo_root=os.getcwd(),
+            final_message_path=final_message_path,
+        )
+
+        self.assertEqual(args[args.index("--profile") + 1], "local")
+        self.assertEqual(args[args.index("--model") + 1], "gpt-5.1-codex")
 
     def test_claude_builds_argument_list_without_shell_string(self):
         executor = ClaudePrintExecutor(project_root=os.getcwd())
@@ -134,12 +174,13 @@ class TestExecutorCommandBuilders(unittest.TestCase):
 
         self.assertEqual(args, ["claude", "-p", "--output-format", "stream-json", prompt])
 
-    def test_prompt_contains_mission_context_but_not_secret_like_fields(self):
+    def test_prompt_contains_runtime_context_but_not_secret_like_fields(self):
         prompt = CodexExecExecutor(project_root=os.getcwd()).build_prompt(self.payload(), config=None)
 
         self.assertIn("com.example.game", prompt)
         self.assertIn("Explore tutorial", prompt)
         self.assertIn("screenshot, wait, back", prompt)
+        self.assertIn("Stay within this repository", prompt)
         self.assertNotIn("should-not-leak", prompt)
         self.assertNotIn("api_key", prompt)
         self.assertNotIn("authorization", prompt)

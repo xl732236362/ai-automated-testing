@@ -87,11 +87,31 @@ class CodexExecExecutor:
         raise ExecutorUnavailableError("runner is not available")
 
     def build_prompt(self, payload, config):
-        return build_runner_prompt(payload, self.id)
+        return build_runner_prompt(payload, self.id, config=config)
 
-    def build_command(self, prompt, repo_root=None):
+    def build_command(self, prompt, repo_root=None, final_message_path=None):
         repo_root = validate_repo_root(repo_root or self.project_root, self.project_root)
-        return ["codex", "exec", "--cd", repo_root, "--json", prompt]
+        final_message_path = final_message_path or os.path.join(
+            repo_root,
+            "codex_last_message.txt",
+        )
+        args = [
+            self.command,
+            "exec",
+            "--cd",
+            repo_root,
+            "--sandbox",
+            self.sandbox,
+            "--json",
+            "--output-last-message",
+            final_message_path,
+        ]
+        if self.profile:
+            args.extend(["--profile", self.profile])
+        if self.model:
+            args.extend(["--model", self.model])
+        args.append(prompt)
+        return args
 
     def parse_events(self, lines):
         return parse_jsonl_events(lines, self.id, codex_message)
@@ -117,7 +137,7 @@ class ClaudePrintExecutor:
         raise ExecutorUnavailableError("runner is not available")
 
     def build_prompt(self, payload, config):
-        return build_runner_prompt(payload, self.id)
+        return build_runner_prompt(payload, self.id, config=config)
 
     def build_command(self, prompt, repo_root=None):
         repo_root = validate_repo_root(repo_root or self.project_root, self.project_root)
@@ -183,18 +203,44 @@ def parse_positive_int(value, default):
     return parsed
 
 
-def build_runner_prompt(payload, runner_id):
+def build_runner_prompt(payload, runner_id, config=None):
     mission = payload.get("mission") or {}
     allowed_actions = payload.get("allowed_actions") or []
+    device_uri = payload.get("device_uri", "")
+    max_steps = payload.get("max_steps", "")
+    if config is not None:
+        mission = getattr(config, "mission", None) or mission
+        allowed_actions = getattr(config, "allowed_actions", allowed_actions)
+        device_uri = getattr(config, "device_uri", device_uri)
+        max_steps = getattr(config, "max_steps", max_steps)
+
+    mission_type = getattr(mission, "type", None)
+    mission_goal = getattr(mission, "goal", None)
+    mission_targets = getattr(mission, "targets", None)
+    success_criteria = getattr(mission, "success_criteria", None)
+    if isinstance(mission, dict):
+        mission_type = mission_type or mission.get("type", "free_explore")
+        mission_goal = mission_goal or mission.get("goal", "")
+        mission_targets = mission_targets or mission.get("targets", [])
+        success_criteria = success_criteria or mission.get("success_criteria", [])
+    mission_type = mission_type or "free_explore"
+    mission_goal = mission_goal or ""
+    mission_targets = mission_targets or []
+    success_criteria = success_criteria or []
+
     lines = [
         "Runner: %s" % runner_id,
         "Package: %s" % payload.get("package_name", ""),
-        "Mission type: %s" % mission.get("type", "free_explore"),
-        "Mission goal: %s" % mission.get("goal", ""),
-        "Targets: %s" % ", ".join(mission.get("targets") or []),
-        "Success criteria: %s" % ", ".join(mission.get("success_criteria") or []),
+        "Device URI: %s" % device_uri,
+        "Mission type: %s" % mission_type,
+        "Mission goal: %s" % mission_goal,
+        "Targets: %s" % ", ".join(mission_targets or []),
+        "Success criteria: %s" % ", ".join(success_criteria or []),
         "Allowed actions: %s" % ", ".join(allowed_actions),
-        "Stay within this repository and produce structured progress events.",
+        "Max steps: %s" % max_steps,
+        "Stay within this repository.",
+        "Use existing project tools and avoid unrelated code changes.",
+        "Produce concise progress events and a final summary.",
     ]
     return "\n".join(lines)
 
