@@ -36,7 +36,10 @@
           <p class="eyebrow">Mission Console</p>
           <h1>配置并观察自动探索任务</h1>
         </div>
-        <div class="run-state" id="run-state">加载中</div>
+        <div class="status-group">
+          <div class="run-state" id="backend-status">检测后端</div>
+          <div class="run-state" id="run-state">加载中</div>
+        </div>
       </header>
 
       <section id="mission" class="panel">
@@ -95,7 +98,7 @@
             <p class="eyebrow">Timeline</p>
             <h2>实时决策时间线</h2>
           </div>
-          <button class="primary-button" type="button">开始运行（规划中）</button>
+          <button class="primary-button" id="start-run-button" type="button">开始运行</button>
         </div>
         <div class="timeline" id="timeline"></div>
       </section>

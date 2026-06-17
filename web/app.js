@@ -1,4 +1,7 @@
-const STATIC_ONLY = true;
+const STATIC_ONLY = false;
+const API_BASE = "";
+let currentData = null;
+let backendOnline = false;
 
 const ACTION_LABELS = {
   screenshot: "截图",
@@ -23,14 +26,13 @@ document.addEventListener("DOMContentLoaded", () => {
   const root = document.getElementById("app");
   const sampleUrl = root.dataset.sampleUrl;
 
-  fetch(sampleUrl)
-    .then((response) => {
-      if (!response.ok) {
-        throw new Error(`无法读取样例数据: ${response.status}`);
-      }
-      return response.json();
+  wireStartButton();
+  Promise.all([loadSample(sampleUrl), detectBackend()])
+    .then(([sample]) => {
+      currentData = sample;
+      renderConsole(sample);
+      updateBackendStatus();
     })
-    .then(renderConsole)
     .catch(renderLoadError);
 });
 
@@ -165,15 +167,125 @@ function renderReport(run) {
 }
 
 function markStaticControls() {
-  if (!STATIC_ONLY) {
-    return;
-  }
-
   document.querySelectorAll("button").forEach((button) => {
+    if (button.id === "start-run-button") {
+      button.disabled = !backendOnline;
+      button.setAttribute("aria-disabled", String(!backendOnline));
+      button.title = backendOnline
+        ? "通过本地后端启动 game_reverse runner。"
+        : "未检测到本地后端；运行 python -m game_reverse.web_server 后启用。";
+      return;
+    }
+
     button.disabled = true;
     button.setAttribute("aria-disabled", "true");
-    button.title = "静态阶段不会执行命令；后端接入后启用。";
+    button.title = "该控件将在后端功能扩展后启用。";
   });
+}
+
+function wireStartButton() {
+  const button = document.getElementById("start-run-button");
+  button.addEventListener("click", () => {
+    if (!backendOnline || !currentData) {
+      return;
+    }
+
+    button.disabled = true;
+    setRunState("运行中", "正在通过本地后端启动 game_reverse runner。");
+    const payload = buildRunPayload(currentData.config);
+    fetch(`${API_BASE}/api/runs`, {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify(payload),
+    })
+      .then((response) => {
+        if (!response.ok) {
+          return response.json().then((error) => {
+            throw new Error(error.error || `启动失败: ${response.status}`);
+          });
+        }
+        return response.json();
+      })
+      .then((run) => {
+        setRunState(run.status === "completed" ? "运行完成" : run.status, run.session_dir || "");
+        updateOutputsFromRun(run);
+      })
+      .catch((error) => {
+        setRunState("运行失败", error.message);
+      })
+      .finally(() => {
+        button.disabled = false;
+      });
+  });
+}
+
+function loadSample(sampleUrl) {
+  return fetch(sampleUrl).then((response) => {
+    if (!response.ok) {
+      throw new Error(`无法读取样例数据: ${response.status}`);
+    }
+    return response.json();
+  });
+}
+
+function detectBackend() {
+  return fetch(`${API_BASE}/api/health`)
+    .then((response) => {
+      if (!response.ok) {
+        throw new Error(`后端不可用: ${response.status}`);
+      }
+      return response.json();
+    })
+    .then((health) => {
+      backendOnline = health.status === "ok";
+      return health;
+    })
+    .catch(() => {
+      backendOnline = false;
+      return null;
+    });
+}
+
+function updateBackendStatus() {
+  const status = document.getElementById("backend-status");
+  status.classList.toggle("is-online", backendOnline);
+  status.classList.toggle("is-offline", !backendOnline);
+  status.textContent = backendOnline ? "后端在线" : "静态预览";
+  status.title = backendOnline
+    ? "已连接本地 Python 后端。"
+    : "未检测到本地 Python 后端，当前使用静态样例数据。";
+  markStaticControls();
+}
+
+function buildRunPayload(config) {
+  return {
+    runner: "game_reverse",
+    device_uri: config.device_uri,
+    package_name: config.package_name,
+    max_steps: config.max_steps,
+    mission: config.mission,
+    model: config.model,
+    allowed_actions: config.allowed_actions,
+    recent_steps: config.recent_steps,
+    consecutive_failure_limit: config.consecutive_failure_limit,
+    enable_unsafe_actions: config.allowed_actions.some((action) => ["tap", "swipe"].includes(action)),
+  };
+}
+
+function setRunState(label, title) {
+  const state = document.getElementById("run-state");
+  state.textContent = label;
+  state.title = title || "";
+}
+
+function updateOutputsFromRun(run) {
+  const outputs = document.getElementById("output-list");
+  const outputEntries = [
+    ["运行 ID", run.id],
+    ["运行状态", run.status],
+    ["会话目录", run.session_dir || "-"],
+  ];
+  outputs.replaceChildren(...outputEntries.map(([label, value]) => createOutput(label, value)));
 }
 
 function createField(label, value) {

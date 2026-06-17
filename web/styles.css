@@ -138,6 +138,23 @@ textarea {
   font-weight: 700;
 }
 
+.status-group {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.run-state.is-online {
+  background: #ecf8f0;
+  color: var(--success);
+}
+
+.run-state.is-offline {
+  background: #fff4df;
+  color: var(--warning);
+}
+
 .sidebar-note p {
   margin: 10px 0 0;
   color: var(--muted);
