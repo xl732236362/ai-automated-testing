@@ -31,7 +31,7 @@ class TestExecutorRegistry(unittest.TestCase):
         with self.assertRaisesRegex(KeyError, "missing"):
             registry.get("missing")
 
-    def test_game_reverse_executor_delegates_to_runner(self):
+    def test_game_reverse_executor_delegates_to_runner_with_optional_context(self):
         calls = []
 
         def fake_runner(config):
@@ -39,8 +39,13 @@ class TestExecutorRegistry(unittest.TestCase):
             return "session-dir"
 
         executor = GameReverseExecutor(fake_runner)
+        context = object()
 
-        result = executor.start(config={"package_name": "com.example.game"}, payload={})
+        result = executor.start(
+            config={"package_name": "com.example.game"},
+            payload={},
+            context=context,
+        )
 
         self.assertEqual(result, "session-dir")
         self.assertEqual(calls, [{"package_name": "com.example.game"}])

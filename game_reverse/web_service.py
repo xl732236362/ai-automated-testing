@@ -6,7 +6,7 @@ import threading
 import time
 
 from game_reverse.config import DEFAULT_ALLOWED_ACTIONS, GameReverseConfig
-from game_reverse.executors import ExecutorError, create_default_registry
+from game_reverse.executors import ExecutorError, ExecutorRunContext, create_default_registry
 from game_reverse.mission import parse_mission
 from game_reverse.run_loop import run_loop
 
@@ -171,8 +171,20 @@ class GameReverseWebService:
             record["status"] = "running"
             self._append_event_locked(run_id, "run_started")
 
+        run_dir = os.path.join(config.output_root, run_id)
+
+        def emit_event(event_type, **extra):
+            with self.lock:
+                self._append_event_locked(run_id, event_type, **extra)
+
+        context = ExecutorRunContext(
+            run_id=run_id,
+            run_dir=run_dir,
+            emit_event=emit_event,
+        )
+
         try:
-            session_dir = executor.start(config, payload)
+            session_dir = executor.start(config, payload, context=context)
         except ExecutorError as exc:
             with self.lock:
                 record = self.runs[run_id]

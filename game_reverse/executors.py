@@ -21,6 +21,13 @@ class ExecutorUnavailableError(ExecutorError):
 
 
 @dataclass
+class ExecutorRunContext:
+    run_id: str
+    run_dir: str
+    emit_event: object
+
+
+@dataclass
 class GameReverseExecutor:
     runner: object
     id: str = "game_reverse"
@@ -36,7 +43,7 @@ class GameReverseExecutor:
             "description": self.description,
         }
 
-    def start(self, config, payload):
+    def start(self, config, payload, context=None):
         return self.runner(config)
 
 
@@ -56,7 +63,7 @@ class CodexExecExecutor:
             "description": self.description,
         }
 
-    def start(self, config, payload):
+    def start(self, config, payload, context=None):
         raise ExecutorUnavailableError("runner is not available")
 
     def build_prompt(self, payload, config):
@@ -86,7 +93,7 @@ class ClaudePrintExecutor:
             "description": self.description,
         }
 
-    def start(self, config, payload):
+    def start(self, config, payload, context=None):
         raise ExecutorUnavailableError("runner is not available")
 
     def build_prompt(self, payload, config):

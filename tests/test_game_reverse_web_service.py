@@ -7,6 +7,7 @@ import threading
 import time
 import unittest
 
+from game_reverse.executors import ExecutorRegistry
 from game_reverse.web_service import GameReverseWebService, ValidationError
 
 
@@ -37,6 +38,33 @@ class SlowFakeRunner:
         with open(os.path.join(session_dir, "final_report.md"), "w", encoding="utf-8") as report:
             report.write("# Slow Report\n")
         return session_dir
+
+
+class RecordingExecutor:
+    id = "recording"
+    name = "Recording"
+    available = True
+    description = "Records the context passed by the Web service."
+
+    def __init__(self):
+        self.contexts = []
+
+    def metadata(self):
+        return {
+            "id": self.id,
+            "name": self.name,
+            "available": self.available,
+            "description": self.description,
+        }
+
+    def start(self, config, payload, context=None):
+        self.contexts.append(context)
+        os.makedirs(context.run_dir, exist_ok=True)
+        context.emit_event("runner_event", source=self.id, message="adapter event")
+        report_path = os.path.join(context.run_dir, "final_report.md")
+        with open(report_path, "w", encoding="utf-8") as report:
+            report.write("# Recording Report\n")
+        return context.run_dir
 
 
 class TestGameReverseWebService(unittest.TestCase):
@@ -120,6 +148,32 @@ class TestGameReverseWebService(unittest.TestCase):
         report = service.session_report(result["id"])
 
         self.assertIn("# Slow Report", report["final_report"])
+
+    def test_passes_run_context_to_executor_and_records_adapter_events(self):
+        self.tmpdir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmpdir.cleanup)
+        executor = RecordingExecutor()
+        registry = ExecutorRegistry([executor])
+        service = GameReverseWebService(
+            output_root=self.tmpdir.name,
+            runner=FakeRunner(),
+            executors=registry,
+        )
+        payload = self.valid_payload()
+        payload["runner"] = "recording"
+
+        result = service.start_run(payload)
+        completed = self.wait_for_status(service, result["id"], "completed")
+
+        self.assertEqual(len(executor.contexts), 1)
+        context = executor.contexts[0]
+        self.assertEqual(context.run_id, result["id"])
+        self.assertTrue(context.run_dir.startswith(self.tmpdir.name))
+        self.assertEqual(completed["session_dir"], context.run_dir)
+        events = service.run_events(result["id"])
+        self.assertTrue(any(event["type"] == "runner_event" for event in events))
+        report = service.session_report(result["id"])
+        self.assertIn("# Recording Report", report["final_report"])
 
     def test_rejects_unknown_runner(self):
         service = self.make_service()
