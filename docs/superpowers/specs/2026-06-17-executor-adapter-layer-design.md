@@ -50,6 +50,23 @@ The module owns runner metadata, adapter lookup, command construction helpers, a
 
 The service remains responsible for run IDs, background threads, run records, event storage, session listing, and report loading. The adapters remain responsible only for runner-specific metadata and launch/parsing details.
 
+## Error Boundary
+
+`game_reverse/executors.py` must not import `ValidationError` from `game_reverse.web_service`, because `web_service` imports the executor registry. Shared adapter errors should live in the executor module and be mapped by the service.
+
+Use this boundary:
+
+```python
+class ExecutorError(ValueError):
+    pass
+
+
+class ExecutorUnavailableError(ExecutorError):
+    pass
+```
+
+`web_service.start_run(payload)` catches `ExecutorError` and raises its own `ValidationError` with the same user-facing message. This keeps HTTP validation behavior stable while preventing circular imports.
+
 ## Adapter Contract
 
 Each adapter exposes these fields or methods:
@@ -71,12 +88,23 @@ class ExecutorAdapter:
 The exact implementation can use a base class, dataclass, or simple concrete classes. The important contract is behavior:
 
 - `metadata()` returns browser-safe runner data only.
-- `start(config, payload)` either starts the adapter-specific run or raises `ValidationError` when unavailable.
+- `start(config, payload)` either starts the adapter-specific run or raises `ExecutorUnavailableError` when unavailable.
 - Disabled adapters must not invoke subprocess APIs.
 
 For `game_reverse`, `start()` calls the injected Python runner with a validated `GameReverseConfig` and returns the session directory.
 
-For `codex_exec` and `claude_print`, `start()` raises `ValidationError("runner is not available")` in this phase.
+For `codex_exec` and `claude_print`, `start()` raises `ExecutorUnavailableError("runner is not available")` in this phase.
+
+## Prompt Builder Responsibility
+
+Prompt construction is an adapter responsibility, not a Web service responsibility. The Web service passes validated payload/config data into the adapter. External-runner adapters expose a prompt builder such as:
+
+```python
+def build_prompt(payload, config):
+    ...
+```
+
+The prompt builder returns one plain string argument that summarizes the mission, target package, allowed actions, and requested mode. It must not include API keys, environment variables, local `.env` content, or arbitrary browser-provided shell text.
 
 ## Command Argument Construction
 
@@ -96,6 +124,13 @@ For ClaudeCode:
 
 `repo_root` defaults to the repository root and must stay inside the current project unless a later explicit design changes that. The prompt is built from the mission payload and should be a plain string argument, not shell-interpolated text.
 
+Repository path validation is required even though external adapters are disabled in this phase:
+
+- Resolve both the project root and requested `repo_root` with `os.path.abspath`.
+- Use `os.path.commonpath([project_root, repo_root]) == project_root` to enforce containment.
+- Reject paths outside the project with `ExecutorError("repo_root must stay inside project")`.
+- Unit-test an outside path such as the parent directory.
+
 ## Event Model
 
 Adapters parse external output into the same event shape used by the Web service run log:
@@ -114,7 +149,9 @@ Parser behavior:
 - Invalid JSON lines become `runner_parse_error` events with the original line in `raw`.
 - Empty lines are ignored.
 - Recognized status/message fields are mapped to concise `message` text.
-- Raw event data is kept for debugging, but no environment variables or secrets are added.
+- Raw event data is kept only for fake parser tests and later diagnostic use behind a redaction helper.
+- Before any parsed object is stored in `raw`, pass it through a small recursive redaction helper that replaces values for keys containing `key`, `token`, `secret`, `password`, or `authorization` with `"[redacted]"`.
+- Invalid JSON lines may keep the original line as `{"line": "..."}` because this phase only feeds synthetic test strings into the parser.
 
 The service-owned lifecycle events remain unchanged:
 
@@ -166,9 +203,12 @@ Add focused unit tests:
 - Starting `codex_exec` or `claude_print` returns a validation error and does not invoke subprocess APIs.
 - Codex command builder returns the expected argument list.
 - ClaudeCode command builder returns the expected argument list.
+- Prompt builders include mission/package context and exclude secret-looking fields.
+- Repository root validation rejects paths outside the project.
 - Codex JSONL parser maps fake JSON lines into normalized events.
 - ClaudeCode stream-json parser maps fake JSON lines into normalized events.
 - Invalid JSON parser input produces `runner_parse_error`.
+- Secret-looking keys in parsed `raw` payloads are redacted.
 - Existing `game_reverse` web service and web server tests still pass.
 
 ## Future Work
