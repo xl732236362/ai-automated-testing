@@ -27,7 +27,7 @@
 - Modify: `game_reverse/executors.py`
 - Modify: `game_reverse/web_service.py`
 
-- [ ] **Step 1: Write failing executor context tests**
+- [x] **Step 1: Write failing executor context tests**
 
 In `tests/test_game_reverse_executors.py`, update `test_game_reverse_executor_delegates_to_runner` so it proves the new optional context argument does not break the local runner:
 
@@ -54,7 +54,7 @@ In `tests/test_game_reverse_executors.py`, update `test_game_reverse_executor_de
 
 Remove the old `test_game_reverse_executor_delegates_to_runner` or rename it to the new test above.
 
-- [ ] **Step 2: Write failing Web service context test**
+- [x] **Step 2: Write failing Web service context test**
 
 In `tests/test_game_reverse_web_service.py`, add imports:
 
@@ -122,7 +122,7 @@ Add this test:
         self.assertIn("# Recording Report", report["final_report"])
 ```
 
-- [ ] **Step 3: Run RED**
+- [x] **Step 3: Run RED**
 
 Run:
 
@@ -132,7 +132,7 @@ python -m unittest tests.test_game_reverse_executors tests.test_game_reverse_web
 
 Expected: fail because `GameReverseExecutor.start()` does not accept `context`, `ExecutorRunContext` does not exist, and Web service still calls `executor.start(config, payload)`.
 
-- [ ] **Step 4: Add `ExecutorRunContext` and update adapter signatures**
+- [x] **Step 4: Add `ExecutorRunContext` and update adapter signatures**
 
 In `game_reverse/executors.py`, add the context dataclass after the executor error classes:
 
@@ -158,7 +158,7 @@ Update disabled external executor signatures:
         raise ExecutorUnavailableError("runner is not available")
 ```
 
-- [ ] **Step 5: Pass context from the Web service**
+- [x] **Step 5: Pass context from the Web service**
 
 In `game_reverse/web_service.py`, update imports:
 
@@ -195,7 +195,7 @@ Update `_run_background()`:
 
 Leave the existing `except ExecutorError`, generic `except Exception`, and success update blocks in place.
 
-- [ ] **Step 6: Run GREEN**
+- [x] **Step 6: Run GREEN**
 
 Run:
 
@@ -205,7 +205,7 @@ python -m unittest tests.test_game_reverse_executors tests.test_game_reverse_web
 
 Expected: all tests pass.
 
-- [ ] **Step 7: Commit Task 1**
+- [x] **Step 7: Commit Task 1**
 
 Run:
 
@@ -222,7 +222,7 @@ Expected: commit succeeds.
 - Modify: `tests/test_game_reverse_executors.py`
 - Modify: `game_reverse/executors.py`
 
-- [ ] **Step 1: Write failing availability tests**
+- [x] **Step 1: Write failing availability tests**
 
 In `tests/test_game_reverse_executors.py`, update `test_default_registry_lists_all_runner_metadata` so it is independent of the operator's environment:
 
@@ -284,7 +284,7 @@ Then add these tests to `TestExecutorRegistry`:
         self.assertEqual(executor.model, "gpt-5.1-codex")
 ```
 
-- [ ] **Step 2: Run RED**
+- [x] **Step 2: Run RED**
 
 Run:
 
@@ -294,7 +294,7 @@ python -m unittest tests.test_game_reverse_executors
 
 Expected: fail because `create_default_registry()` does not accept `environ` or `codex_which`, and `CodexExecExecutor` has static availability.
 
-- [ ] **Step 3: Implement environment-backed availability**
+- [x] **Step 3: Implement environment-backed availability**
 
 In `game_reverse/executors.py`, update imports:
 
@@ -405,7 +405,7 @@ In `tests/test_game_reverse_web_service.py`, update `make_service()` to keep def
         )
 ```
 
-- [ ] **Step 4: Run GREEN**
+- [x] **Step 4: Run GREEN**
 
 Run:
 
@@ -415,7 +415,7 @@ python -m unittest tests.test_game_reverse_executors tests.test_game_reverse_web
 
 Expected: all tests pass.
 
-- [ ] **Step 5: Commit Task 2**
+- [x] **Step 5: Commit Task 2**
 
 Run:
 
@@ -432,7 +432,7 @@ Expected: commit succeeds.
 - Modify: `tests/test_game_reverse_executors.py`
 - Modify: `game_reverse/executors.py`
 
-- [ ] **Step 1: Update command and prompt tests**
+- [x] **Step 1: Update command and prompt tests**
 
 In `tests/test_game_reverse_executors.py`, update `test_codex_builds_argument_list_without_shell_string`:
 
@@ -510,7 +510,7 @@ Update `test_prompt_contains_mission_context_but_not_secret_like_fields` so it c
         self.assertNotIn("authorization", prompt)
 ```
 
-- [ ] **Step 2: Run RED**
+- [x] **Step 2: Run RED**
 
 Run:
 
@@ -520,7 +520,7 @@ python -m unittest tests.test_game_reverse_executors
 
 Expected: fail because `build_command()` does not include sandbox or last-message output.
 
-- [ ] **Step 3: Implement Codex command shape**
+- [x] **Step 3: Implement Codex command shape**
 
 In `CodexExecExecutor.build_command()`, replace the existing method with:
 
@@ -609,7 +609,7 @@ Update `ClaudePrintExecutor.build_prompt()`:
         return build_runner_prompt(payload, self.id, config=config)
 ```
 
-- [ ] **Step 4: Run GREEN**
+- [x] **Step 4: Run GREEN**
 
 Run:
 
@@ -619,7 +619,7 @@ python -m unittest tests.test_game_reverse_executors tests.test_game_reverse_web
 
 Expected: all tests pass.
 
-- [ ] **Step 5: Commit Task 3**
+- [x] **Step 5: Commit Task 3**
 
 Run:
 
@@ -636,7 +636,7 @@ Expected: commit succeeds.
 - Modify: `tests/test_game_reverse_executors.py`
 - Modify: `game_reverse/executors.py`
 
-- [ ] **Step 1: Add fake process helpers**
+- [x] **Step 1: Add fake process helpers**
 
 In `tests/test_game_reverse_executors.py`, add this helper near the top of the file after imports:
 
@@ -673,7 +673,7 @@ def make_context(run_id, run_dir, events):
     return ExecutorRunContext(run_id=run_id, run_dir=run_dir, emit_event=emit_event)
 ```
 
-- [ ] **Step 2: Write failing Codex success test**
+- [x] **Step 2: Write failing Codex success test**
 
 Add this test class:
 
@@ -742,7 +742,7 @@ Add imports at the top:
 import tempfile
 ```
 
-- [ ] **Step 3: Run RED**
+- [x] **Step 3: Run RED**
 
 Run:
 
@@ -752,7 +752,7 @@ python -m unittest tests.test_game_reverse_executors
 
 Expected: fail because `CodexExecExecutor.start()` still raises `ExecutorUnavailableError`.
 
-- [ ] **Step 4: Implement Codex process success path**
+- [x] **Step 4: Implement Codex process success path**
 
 In `game_reverse/executors.py`, add helper constants near the existing constants:
 
@@ -922,7 +922,7 @@ Add methods inside `CodexExecExecutor`:
             report.write("\n".join(lines) + "\n")
 ```
 
-- [ ] **Step 5: Run GREEN**
+- [x] **Step 5: Run GREEN**
 
 Run:
 
@@ -932,7 +932,7 @@ python -m unittest tests.test_game_reverse_executors
 
 Expected: all tests pass.
 
-- [ ] **Step 6: Commit Task 4**
+- [x] **Step 6: Commit Task 4**
 
 Run:
 
@@ -949,7 +949,7 @@ Expected: commit succeeds.
 - Modify: `tests/test_game_reverse_executors.py`
 - Modify: `game_reverse/executors.py`
 
-- [ ] **Step 1: Add timeout fake process**
+- [x] **Step 1: Add timeout fake process**
 
 In `tests/test_game_reverse_executors.py`, add:
 
@@ -972,7 +972,7 @@ Add import:
 import subprocess
 ```
 
-- [ ] **Step 2: Write failing failure tests**
+- [x] **Step 2: Write failing failure tests**
 
 Add tests to `TestCodexExecProcess`:
 
@@ -1036,7 +1036,7 @@ Add tests to `TestCodexExecProcess`:
                 executor.start(config=None, payload=self.payload(), context=context)
 ```
 
-- [ ] **Step 3: Run RED**
+- [x] **Step 3: Run RED**
 
 Run:
 
@@ -1046,7 +1046,7 @@ python -m unittest tests.test_game_reverse_executors
 
 Expected: timeout test fails because `subprocess.TimeoutExpired` is not caught and no `runner_timeout` event is emitted.
 
-- [ ] **Step 4: Implement timeout handling**
+- [x] **Step 4: Implement timeout handling**
 
 In `CodexExecExecutor.start()`, replace:
 
@@ -1081,7 +1081,7 @@ with:
         stderr_thread.join(timeout=2)
 ```
 
-- [ ] **Step 5: Run GREEN**
+- [x] **Step 5: Run GREEN**
 
 Run:
 
@@ -1091,7 +1091,7 @@ python -m unittest tests.test_game_reverse_executors
 
 Expected: all tests pass.
 
-- [ ] **Step 6: Commit Task 5**
+- [x] **Step 6: Commit Task 5**
 
 Run:
 
@@ -1107,7 +1107,7 @@ Expected: commit succeeds.
 **Files:**
 - Modify: `tests/test_game_reverse_web_service.py`
 
-- [ ] **Step 1: Write Web service fake Codex test**
+- [x] **Step 1: Write Web service fake Codex test**
 
 In `tests/test_game_reverse_web_service.py`, add imports:
 
@@ -1177,7 +1177,7 @@ class FakeServiceProcess:
         pass
 ```
 
-- [ ] **Step 2: Run RED or GREEN**
+- [x] **Step 2: Run RED or GREEN**
 
 Run:
 
@@ -1187,7 +1187,7 @@ python -m unittest tests.test_game_reverse_web_service
 
 Expected: pass if Tasks 1-5 already cover the integration path. If it fails, fix only the integration mismatch shown by this test.
 
-- [ ] **Step 3: Commit Task 6**
+- [x] **Step 3: Commit Task 6**
 
 Run:
 
@@ -1203,7 +1203,7 @@ Expected: commit succeeds.
 **Files:**
 - Verify only unless failures require fixes.
 
-- [ ] **Step 1: Run focused backend tests**
+- [x] **Step 1: Run focused backend tests**
 
 Run:
 
@@ -1213,7 +1213,7 @@ python -m unittest tests.test_game_reverse_executors tests.test_game_reverse_web
 
 Expected: all tests pass.
 
-- [ ] **Step 2: Run existing project-focused suite**
+- [x] **Step 2: Run existing project-focused suite**
 
 Run:
 
@@ -1223,7 +1223,7 @@ python -m unittest tests.test_game_reverse_executors tests.test_game_reverse_web
 
 Expected: all tests pass.
 
-- [ ] **Step 3: Run JavaScript syntax check**
+- [x] **Step 3: Run JavaScript syntax check**
 
 Run:
 
@@ -1233,7 +1233,7 @@ node --check web/app.js
 
 Expected: exit code 0.
 
-- [ ] **Step 4: Check local Codex CLI remains discoverable**
+- [x] **Step 4: Check local Codex CLI remains discoverable**
 
 Run:
 
@@ -1244,7 +1244,7 @@ codex exec --help
 
 Expected: `codex-cli 0.139.0` or newer, and help output includes `--cd`, `--json`, and `--output-last-message`.
 
-- [ ] **Step 5: Check diff hygiene**
+- [x] **Step 5: Check diff hygiene**
 
 Run:
 
@@ -1260,7 +1260,7 @@ Expected: no whitespace errors and only intended files changed.
 **Files:**
 - Modify: `docs/superpowers/plans/2026-06-17-codex-exec-runner.md`
 
-- [ ] **Step 1: Mark completed plan boxes**
+- [x] **Step 1: Mark completed plan boxes**
 
 As each implementation task completes, change that task's executed checkboxes from:
 
@@ -1276,7 +1276,7 @@ to:
 
 Only mark steps that were actually executed.
 
-- [ ] **Step 2: Commit plan status**
+- [x] **Step 2: Commit plan status**
 
 Run:
 
