@@ -69,6 +69,7 @@ class RecordingExecutor:
 
 class FakeServiceProcess:
     def __init__(self, stdout_lines=None, stderr_lines=None, returncode=0):
+        self.stdin = FakeServiceStdin()
         self.stdout = stdout_lines or []
         self.stderr = stderr_lines or []
         self.returncode = returncode
@@ -80,6 +81,17 @@ class FakeServiceProcess:
         pass
 
     def kill(self):
+        pass
+
+
+class FakeServiceStdin:
+    def write(self, text):
+        pass
+
+    def flush(self):
+        pass
+
+    def close(self):
         pass
 
 

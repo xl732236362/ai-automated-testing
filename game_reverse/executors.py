@@ -112,6 +112,7 @@ class CodexExecExecutor:
                 args,
                 cwd=repo_root,
                 shell=False,
+                stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
@@ -120,6 +121,8 @@ class CodexExecExecutor:
             )
         except OSError as exc:
             raise ExecutorError("failed to start codex exec: %s" % exc)
+
+        self._write_prompt(process, prompt)
 
         context.emit_event(
             "runner_process_started",
@@ -190,7 +193,7 @@ class CodexExecExecutor:
             "codex_last_message.txt",
         )
         args = [
-            self.command,
+            self.command_path or self.command,
             "exec",
             "--cd",
             repo_root,
@@ -204,7 +207,7 @@ class CodexExecExecutor:
             args.extend(["--profile", self.profile])
         if self.model:
             args.extend(["--model", self.model])
-        args.append(prompt)
+        args.append("-")
         return args
 
     def parse_events(self, lines):
@@ -214,6 +217,13 @@ class CodexExecExecutor:
         if not args:
             return []
         return list(args[:-1]) + ["[prompt]"]
+
+    def _write_prompt(self, process, prompt):
+        if process.stdin is None:
+            return
+        process.stdin.write(prompt)
+        process.stdin.flush()
+        process.stdin.close()
 
     def _drain_stdout(self, stream, stdout_path, context):
         with open(stdout_path, "w", encoding="utf-8") as stdout_file:
@@ -398,6 +408,7 @@ def build_runner_prompt(payload, runner_id, config=None):
     success_criteria = success_criteria or []
 
     lines = [
+        "Execute this task now. Use the context below as instructions, not as a readiness check.",
         "Runner: %s" % runner_id,
         "Package: %s" % payload.get("package_name", ""),
         "Device URI: %s" % device_uri,
@@ -409,7 +420,7 @@ def build_runner_prompt(payload, runner_id, config=None):
         "Max steps: %s" % max_steps,
         "Stay within this repository.",
         "Use existing project tools and avoid unrelated code changes.",
-        "Produce concise progress events and a final summary.",
+        "When done, provide a final answer that summarizes what you checked and the result.",
     ]
     return "\n".join(lines)
 

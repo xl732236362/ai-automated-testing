@@ -18,6 +18,7 @@ from game_reverse.executors import (
 
 class FakeProcess:
     def __init__(self, stdout_lines=None, stderr_lines=None, returncode=0):
+        self.stdin = FakeStdin()
         self.stdout = stdout_lines or []
         self.stderr = stderr_lines or []
         self.returncode = returncode
@@ -32,6 +33,21 @@ class FakeProcess:
 
     def kill(self):
         self.killed = True
+
+
+class FakeStdin:
+    def __init__(self):
+        self.written = []
+        self.closed = False
+
+    def write(self, text):
+        self.written.append(text)
+
+    def flush(self):
+        pass
+
+    def close(self):
+        self.closed = True
 
 
 class TimeoutFakeProcess(FakeProcess):
@@ -185,7 +201,8 @@ class TestExecutorCommandBuilders(unittest.TestCase):
         ])
         self.assertIn("--output-last-message", args)
         self.assertEqual(args[args.index("--output-last-message") + 1], final_message_path)
-        self.assertEqual(args[-1], prompt)
+        self.assertEqual(args[-1], "-")
+        self.assertNotIn(prompt, args)
         self.assertNotIn("--dangerously-bypass-approvals-and-sandbox", args)
         self.assertTrue(all(isinstance(part, str) for part in args))
 
@@ -209,6 +226,19 @@ class TestExecutorCommandBuilders(unittest.TestCase):
         self.assertEqual(args[args.index("--profile") + 1], "local")
         self.assertEqual(args[args.index("--model") + 1], "gpt-5.1-codex")
 
+    def test_codex_command_uses_resolved_binary_path(self):
+        resolved_codex = r"C:\tools\codex.CMD"
+        executor = CodexExecExecutor(
+            project_root=os.getcwd(),
+            enabled=True,
+            which=lambda command: resolved_codex,
+        )
+        prompt = executor.build_prompt(self.payload(), config=None)
+
+        args = executor.build_command(prompt, repo_root=os.getcwd())
+
+        self.assertEqual(args[0], resolved_codex)
+
     def test_claude_builds_argument_list_without_shell_string(self):
         executor = ClaudePrintExecutor(project_root=os.getcwd())
         prompt = executor.build_prompt(self.payload(), config=None)
@@ -220,6 +250,8 @@ class TestExecutorCommandBuilders(unittest.TestCase):
     def test_prompt_contains_runtime_context_but_not_secret_like_fields(self):
         prompt = CodexExecExecutor(project_root=os.getcwd()).build_prompt(self.payload(), config=None)
 
+        self.assertIn("Execute this task now", prompt)
+        self.assertIn("final answer", prompt)
         self.assertIn("com.example.game", prompt)
         self.assertIn("Explore tutorial", prompt)
         self.assertIn("screenshot, wait, back", prompt)
@@ -298,13 +330,14 @@ class TestCodexExecProcess(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             events = []
             calls = []
+            processes = []
 
             def fake_popen(args, **kwargs):
                 calls.append((args, kwargs))
                 final_path = args[args.index("--output-last-message") + 1]
                 with open(final_path, "w", encoding="utf-8") as last_message:
                     last_message.write("Final Codex summary")
-                return FakeProcess(
+                process = FakeProcess(
                     stdout_lines=[
                         '{"type": "started", "message": "run started"}\n',
                         '{"type": "assistant_message", "message": "observed screen"}\n',
@@ -312,6 +345,8 @@ class TestCodexExecProcess(unittest.TestCase):
                     stderr_lines=["diagnostic line\n"],
                     returncode=0,
                 )
+                processes.append(process)
+                return process
 
             executor = CodexExecExecutor(
                 project_root=os.getcwd(),
@@ -326,6 +361,9 @@ class TestCodexExecProcess(unittest.TestCase):
             self.assertEqual(session_dir, context.run_dir)
             self.assertEqual(calls[0][1]["cwd"], os.path.abspath(os.getcwd()))
             self.assertFalse(calls[0][1]["shell"])
+            self.assertEqual(calls[0][1]["stdin"], subprocess.PIPE)
+            self.assertIn("Explore tutorial", "".join(processes[0].stdin.written))
+            self.assertTrue(processes[0].stdin.closed)
             self.assertTrue(os.path.exists(os.path.join(session_dir, "codex_stdout.jsonl")))
             self.assertTrue(os.path.exists(os.path.join(session_dir, "codex_stderr.log")))
             self.assertTrue(os.path.exists(os.path.join(session_dir, "codex_last_message.txt")))
