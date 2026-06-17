@@ -1,0 +1,111 @@
+{
+  "config": {
+    "device_uri": "Android:///emulator-5554",
+    "package_name": "com.example.game",
+    "mission": {
+      "type": "free_explore",
+      "goal": "探索新手引导流程，识别核心玩法循环，并避开登录、支付、权限授权等敏感操作。",
+      "targets": [
+        "主界面入口",
+        "核心玩法按钮",
+        "目标计数变化"
+      ],
+      "success_criteria": [
+        "完成至少 3 个稳定状态记录",
+        "识别主要交互方式",
+        "生成最终探索报告"
+      ]
+    },
+    "model": "claude-opus-4-8",
+    "allowed_actions": [
+      "screenshot",
+      "wait",
+      "back",
+      "tap",
+      "swipe"
+    ],
+    "max_steps": 50,
+    "recent_steps": 5,
+    "consecutive_failure_limit": 3,
+    "output_root": "game_reverse/outputs/sessions"
+  },
+  "runners": [
+    {
+      "id": "game_reverse",
+      "name": "game_reverse",
+      "status": "可接入",
+      "description": "直接调用当前项目的 Python 探索循环，适合稳定任务和自动报告。"
+    },
+    {
+      "id": "codex_exec",
+      "name": "Codex CLI",
+      "status": "计划接入",
+      "description": "后端通过 codex exec --json 启动非交互任务，并把 JSONL 事件推送到页面。"
+    },
+    {
+      "id": "claude_print",
+      "name": "ClaudeCode CLI",
+      "status": "计划接入",
+      "description": "后端通过 claude -p 的 stream-json 输出观察任务过程。"
+    }
+  ],
+  "run": {
+    "id": "sample",
+    "status": "idle",
+    "status_label": "静态预览",
+    "summary": "当前页面展示静态样例数据，不会连接设备、启动模型或执行命令。",
+    "steps": [
+      {
+        "step": 1,
+        "state": "tutorial_home",
+        "screen_summary": "识别到新手引导主页，屏幕下方存在主要操作区域。",
+        "action": {
+          "type": "wait",
+          "seconds": 1
+        },
+        "reason": "等待界面稳定，确认是否存在动画或弹窗。",
+        "result": "ok",
+        "risks": []
+      },
+      {
+        "step": 2,
+        "state": "aiming_view",
+        "screen_summary": "画面进入准星视角，中心区域可用于对准目标。",
+        "action": {
+          "type": "swipe",
+          "x1": 520,
+          "y1": 900,
+          "x2": 430,
+          "y2": 900,
+          "duration": 0.4
+        },
+        "reason": "微调视角以验证场景移动与目标计数之间的关系。",
+        "result": "ok",
+        "risks": []
+      },
+      {
+        "step": 3,
+        "state": "sensitive_gate",
+        "screen_summary": "检测到可能的登录或授权入口。",
+        "action": {
+          "type": "back"
+        },
+        "reason": "敏感页面只允许返回或等待，避免提交账号、支付或授权信息。",
+        "result": "guarded",
+        "risks": [
+          "疑似登录/授权页面，已触发安全限制。"
+        ]
+      }
+    ],
+    "outputs": {
+      "session_dir": "game_reverse/outputs/sessions/sample",
+      "mission_draft": "mission_draft.md",
+      "final_report": "final_report.md"
+    },
+    "report_preview": [
+      "已识别新手引导入口和主要操作区域。",
+      "准星视角可通过滑动调整，点击/射击类动作需要后续接后端验证。",
+      "敏感页面已按安全策略返回，未执行登录、支付或授权。"
+    ]
+  }
+}

@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>App/Game 探索控制台</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <main id="app" class="console" data-sample-url="data/sample-run.json">
+    <aside class="sidebar" aria-label="工作区导航">
+      <div class="brand">
+        <span class="brand-mark">AT</span>
+        <div>
+          <strong>App/Game 探索控制台</strong>
+          <span>Airtest + Agent Runner</span>
+        </div>
+      </div>
+      <nav class="nav-list">
+        <a class="nav-item is-active" href="#mission">运行任务</a>
+        <a class="nav-item" href="#device">设备配置</a>
+        <a class="nav-item" href="#presets">任务模板</a>
+        <a class="nav-item" href="#sessions">历史会话</a>
+        <a class="nav-item" href="#reports">报告中心</a>
+        <a class="nav-item" href="#settings">模型设置</a>
+      </nav>
+      <section class="sidebar-note">
+        <span class="note-label">静态预览</span>
+        <p>第一阶段不会启动 Codex、ClaudeCode、Airtest 或 ADB。</p>
+      </section>
+    </aside>
+
+    <section class="workspace" aria-label="任务工作区">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Mission Console</p>
+          <h1>配置并观察自动探索任务</h1>
+        </div>
+        <div class="run-state" id="run-state">加载中</div>
+      </header>
+
+      <section id="mission" class="panel">
+        <div class="panel-header">
+          <div>
+            <p class="eyebrow">Mission</p>
+            <h2>任务配置</h2>
+          </div>
+          <button class="ghost-button" type="button">导入配置</button>
+        </div>
+        <div class="form-grid" id="config-grid"></div>
+
+        <div class="mission-card">
+          <div>
+            <label for="mission-goal">任务目标</label>
+            <textarea id="mission-goal" readonly></textarea>
+          </div>
+          <div class="mission-lists">
+            <div>
+              <h3>目标对象</h3>
+              <ul id="mission-targets"></ul>
+            </div>
+            <div>
+              <h3>成功标准</h3>
+              <ul id="mission-success"></ul>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-header">
+          <div>
+            <p class="eyebrow">Runner</p>
+            <h2>执行器选择</h2>
+          </div>
+          <span class="planned-badge">后端接入规划</span>
+        </div>
+        <div class="runner-grid" id="runner-grid"></div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-header">
+          <div>
+            <p class="eyebrow">Safety</p>
+            <h2>动作与安全限制</h2>
+          </div>
+        </div>
+        <div class="actions-row" id="allowed-actions"></div>
+        <p class="safety-copy">遇到登录、实名、支付、权限授权、账号密码输入等敏感页面时，后端阶段必须限制为等待或返回。</p>
+      </section>
+
+      <section class="panel">
+        <div class="panel-header">
+          <div>
+            <p class="eyebrow">Timeline</p>
+            <h2>实时决策时间线</h2>
+          </div>
+          <button class="primary-button" type="button">开始运行（规划中）</button>
+        </div>
+        <div class="timeline" id="timeline"></div>
+      </section>
+    </section>
+
+    <aside class="inspector" aria-label="运行观察面板">
+      <section class="panel">
+        <div class="panel-header compact">
+          <div>
+            <p class="eyebrow">Preview</p>
+            <h2>最新截图</h2>
+          </div>
+        </div>
+        <div class="phone-preview">
+          <div class="crosshair"></div>
+          <span>静态截图占位</span>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-header compact">
+          <div>
+            <p class="eyebrow">Risks</p>
+            <h2>风险记录</h2>
+          </div>
+        </div>
+        <ul class="risk-list" id="risk-list"></ul>
+      </section>
+
+      <section id="reports" class="panel">
+        <div class="panel-header compact">
+          <div>
+            <p class="eyebrow">Report</p>
+            <h2>报告预览</h2>
+          </div>
+        </div>
+        <div class="report-preview" id="report-preview"></div>
+        <div class="output-list" id="output-list"></div>
+      </section>
+    </aside>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
