@@ -141,7 +141,24 @@ class CodexExecExecutor:
         stdout_thread.start()
         stderr_thread.start()
 
-        return_code = process.wait(timeout=self.timeout_seconds)
+        try:
+            return_code = process.wait(timeout=self.timeout_seconds)
+        except subprocess.TimeoutExpired:
+            context.emit_event(
+                "runner_timeout",
+                source=self.id,
+                timeout_seconds=self.timeout_seconds,
+            )
+            process.terminate()
+            try:
+                process.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait(timeout=2)
+            stdout_thread.join(timeout=2)
+            stderr_thread.join(timeout=2)
+            raise ExecutorError("codex exec timed out")
+
         stdout_thread.join(timeout=2)
         stderr_thread.join(timeout=2)
 

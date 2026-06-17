@@ -2,6 +2,7 @@
 """Tests for game explorer executor adapters."""
 
 import os
+import subprocess
 import tempfile
 import unittest
 
@@ -31,6 +32,18 @@ class FakeProcess:
 
     def kill(self):
         self.killed = True
+
+
+class TimeoutFakeProcess(FakeProcess):
+    def __init__(self):
+        super().__init__(stdout_lines=[], stderr_lines=[], returncode=None)
+        self.wait_calls = 0
+
+    def wait(self, timeout=None):
+        self.wait_calls += 1
+        if self.wait_calls == 1:
+            raise subprocess.TimeoutExpired(cmd="codex", timeout=timeout)
+        return -9
 
 
 def make_context(run_id, run_dir, events):
@@ -323,6 +336,64 @@ class TestCodexExecProcess(unittest.TestCase):
             self.assertTrue(any(event.get("message") == "run started" for event in events))
             self.assertTrue(any(event.get("message") == "observed screen" for event in events))
             self.assertTrue(any(event["type"] == "runner_stderr" for event in events))
+
+    def test_codex_timeout_terminates_process_and_emits_event(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            events = []
+            process = TimeoutFakeProcess()
+
+            executor = CodexExecExecutor(
+                project_root=os.getcwd(),
+                enabled=True,
+                timeout_seconds=1,
+                popen_factory=lambda args, **kwargs: process,
+                which=lambda command: command,
+            )
+            context = make_context("run-timeout", os.path.join(tmpdir, "run-timeout"), events)
+
+            with self.assertRaisesRegex(Exception, "timed out"):
+                executor.start(config=None, payload=self.payload(), context=context)
+
+            self.assertTrue(process.terminated)
+            self.assertTrue(any(event["type"] == "runner_timeout" for event in events))
+
+    def test_codex_nonzero_exit_emits_failed_event(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            events = []
+
+            executor = CodexExecExecutor(
+                project_root=os.getcwd(),
+                enabled=True,
+                popen_factory=lambda args, **kwargs: FakeProcess(returncode=7),
+                which=lambda command: command,
+            )
+            context = make_context("run-failed", os.path.join(tmpdir, "run-failed"), events)
+
+            with self.assertRaisesRegex(Exception, "exited with code 7"):
+                executor.start(config=None, payload=self.payload(), context=context)
+
+            self.assertTrue(any(
+                event["type"] == "runner_process_failed" and event["exit_code"] == 7
+                for event in events
+            ))
+
+    def test_codex_spawn_error_is_executor_error(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            events = []
+
+            def fake_popen(args, **kwargs):
+                raise OSError("missing binary")
+
+            executor = CodexExecExecutor(
+                project_root=os.getcwd(),
+                enabled=True,
+                popen_factory=fake_popen,
+                which=lambda command: command,
+            )
+            context = make_context("run-spawn-error", os.path.join(tmpdir, "run-spawn-error"), events)
+
+            with self.assertRaisesRegex(Exception, "failed to start codex exec"):
+                executor.start(config=None, payload=self.payload(), context=context)
 
 
 if __name__ == "__main__":
