@@ -7,7 +7,7 @@ import threading
 import time
 import unittest
 
-from game_reverse.executors import ExecutorRegistry, create_default_registry
+from game_reverse.executors import CodexExecExecutor, ExecutorRegistry, create_default_registry
 from game_reverse.web_service import GameReverseWebService, ValidationError
 
 
@@ -65,6 +65,22 @@ class RecordingExecutor:
         with open(report_path, "w", encoding="utf-8") as report:
             report.write("# Recording Report\n")
         return context.run_dir
+
+
+class FakeServiceProcess:
+    def __init__(self, stdout_lines=None, stderr_lines=None, returncode=0):
+        self.stdout = stdout_lines or []
+        self.stderr = stderr_lines or []
+        self.returncode = returncode
+
+    def wait(self, timeout=None):
+        return self.returncode
+
+    def terminate(self):
+        pass
+
+    def kill(self):
+        pass
 
 
 class TestGameReverseWebService(unittest.TestCase):
@@ -178,6 +194,45 @@ class TestGameReverseWebService(unittest.TestCase):
         self.assertTrue(any(event["type"] == "runner_event" for event in events))
         report = service.session_report(result["id"])
         self.assertIn("# Recording Report", report["final_report"])
+
+    def test_web_service_runs_enabled_codex_executor_with_fake_process(self):
+        self.tmpdir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmpdir.cleanup)
+
+        def fake_popen(args, **kwargs):
+            final_path = args[args.index("--output-last-message") + 1]
+            with open(final_path, "w", encoding="utf-8") as last_message:
+                last_message.write("Codex completed through service")
+            return FakeServiceProcess(
+                stdout_lines=['{"type": "assistant_message", "message": "service event"}\n'],
+                stderr_lines=[],
+                returncode=0,
+            )
+
+        codex_executor = CodexExecExecutor(
+            project_root=os.getcwd(),
+            enabled=True,
+            popen_factory=fake_popen,
+            which=lambda command: command,
+        )
+        registry = ExecutorRegistry([codex_executor])
+        service = GameReverseWebService(
+            output_root=self.tmpdir.name,
+            runner=FakeRunner(),
+            executors=registry,
+        )
+        payload = self.valid_payload()
+        payload["runner"] = "codex_exec"
+
+        result = service.start_run(payload)
+        completed = self.wait_for_status(service, result["id"], "completed")
+
+        self.assertEqual(completed["runner"], "codex_exec")
+        self.assertTrue(os.path.exists(os.path.join(completed["session_dir"], "final_report.md")))
+        events = service.run_events(result["id"])
+        self.assertTrue(any(event.get("message") == "service event" for event in events))
+        report = service.session_report(result["id"])
+        self.assertIn("Codex completed through service", report["final_report"])
 
     def test_rejects_unknown_runner(self):
         service = self.make_service()
