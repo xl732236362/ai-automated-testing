@@ -6,6 +6,7 @@ import threading
 import time
 
 from game_reverse.config import DEFAULT_ALLOWED_ACTIONS, GameReverseConfig
+from game_reverse.executors import ExecutorError, create_default_registry
 from game_reverse.mission import parse_mission
 from game_reverse.run_loop import run_loop
 
@@ -18,9 +19,10 @@ class ValidationError(ValueError):
 
 
 class GameReverseWebService:
-    def __init__(self, output_root=None, runner=None):
+    def __init__(self, output_root=None, runner=None, executors=None):
         self.output_root = output_root or "game_reverse/outputs/sessions"
         self.runner = runner or run_loop
+        self.executors = executors or create_default_registry(self.runner)
         self.runs = {}
         self.events = {}
         self.lock = threading.Lock()
@@ -30,26 +32,7 @@ class GameReverseWebService:
         return {
             "status": "ok",
             "static_only": False,
-            "runners": [
-                {
-                    "id": "game_reverse",
-                    "name": "game_reverse",
-                    "available": True,
-                    "description": "Run the local game_reverse loop with validated config.",
-                },
-                {
-                    "id": "codex_exec",
-                    "name": "Codex CLI",
-                    "available": False,
-                    "description": "Planned executor adapter; not enabled in this phase.",
-                },
-                {
-                    "id": "claude_print",
-                    "name": "ClaudeCode CLI",
-                    "available": False,
-                    "description": "Planned executor adapter; not enabled in this phase.",
-                },
-            ],
+            "runners": self.executors.metadata(),
         }
 
     def config(self):
@@ -60,11 +43,22 @@ class GameReverseWebService:
         }
 
     def start_run(self, payload):
+        if not isinstance(payload, dict):
+            raise ValidationError("payload must be an object")
+
+        runner_id = payload.get("runner", "game_reverse")
+        try:
+            executor = self.executors.get(runner_id)
+        except KeyError:
+            raise ValidationError("runner must be a known runner")
+        if not executor.available:
+            raise ValidationError("runner is not available")
+
         config = self._config_from_payload(payload)
         run_id = self._next_run_id()
         record = {
             "id": run_id,
-            "runner": "game_reverse",
+            "runner": runner_id,
             "status": "queued",
             "session_dir": None,
             "started_at": run_id,
@@ -74,7 +68,7 @@ class GameReverseWebService:
             self.events[run_id] = []
             self._append_event_locked(run_id, "run_queued")
 
-        thread = threading.Thread(target=self._run_background, args=(run_id, config))
+        thread = threading.Thread(target=self._run_background, args=(run_id, executor, config, payload))
         thread.daemon = True
         thread.start()
 
@@ -134,12 +128,9 @@ class GameReverseWebService:
         }
 
     def _config_from_payload(self, payload):
-        if not isinstance(payload, dict):
-            raise ValidationError("payload must be an object")
-
         runner = payload.get("runner", "game_reverse")
-        if runner != "game_reverse":
-            raise ValidationError("runner must be game_reverse in this phase")
+        if not isinstance(runner, str) or not runner:
+            raise ValidationError("runner must be a non-empty string")
 
         package_name = payload.get("package_name")
         if not package_name:
@@ -174,14 +165,31 @@ class GameReverseWebService:
             self.run_counter += 1
             return "%s-%03d" % (timestamp, self.run_counter)
 
-    def _run_background(self, run_id, config):
+    def _run_background(self, run_id, executor, config, payload):
         with self.lock:
             record = self.runs[run_id]
             record["status"] = "running"
             self._append_event_locked(run_id, "run_started")
 
         try:
-            session_dir = self.runner(config)
+            session_dir = executor.start(config, payload)
+        except ExecutorError as exc:
+            with self.lock:
+                record = self.runs[run_id]
+                record.update(
+                    {
+                        "status": "failed",
+                        "error_type": exc.__class__.__name__,
+                        "error": str(exc),
+                    }
+                )
+                self._append_event_locked(
+                    run_id,
+                    "run_failed",
+                    error_type=exc.__class__.__name__,
+                    error=str(exc),
+                )
+            return
         except Exception as exc:
             with self.lock:
                 record = self.runs[run_id]

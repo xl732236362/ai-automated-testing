@@ -25,7 +25,7 @@
 - Create: `tests/test_game_reverse_executors.py`
 - Create: `game_reverse/executors.py`
 
-- [ ] **Step 1: Write failing executor metadata tests**
+- [x] **Step 1: Write failing executor metadata tests**
 
 Create `tests/test_game_reverse_executors.py` with:
 
@@ -78,7 +78,7 @@ class TestExecutorRegistry(unittest.TestCase):
         self.assertEqual(calls, [{"package_name": "com.example.game"}])
 ```
 
-- [ ] **Step 2: Run RED**
+- [x] **Step 2: Run RED**
 
 Run:
 
@@ -88,7 +88,7 @@ python -m unittest tests.test_game_reverse_executors
 
 Expected: fail with `ModuleNotFoundError: No module named 'game_reverse.executors'`.
 
-- [ ] **Step 3: Implement minimal registry and metadata**
+- [x] **Step 3: Implement minimal registry and metadata**
 
 Create `game_reverse/executors.py` with:
 
@@ -202,7 +202,7 @@ def validate_repo_root(repo_root, project_root=PROJECT_ROOT):
     return repo_root
 ```
 
-- [ ] **Step 4: Run GREEN**
+- [x] **Step 4: Run GREEN**
 
 Run:
 
@@ -218,7 +218,7 @@ Expected: pass.
 - Modify: `tests/test_game_reverse_executors.py`
 - Modify: `game_reverse/executors.py`
 
-- [ ] **Step 1: Add failing command and prompt tests**
+- [x] **Step 1: Add failing command and prompt tests**
 
 Append to `tests/test_game_reverse_executors.py`:
 
@@ -274,7 +274,7 @@ class TestExecutorCommandBuilders(unittest.TestCase):
             validate_repo_root(parent, project_root=project_root)
 ```
 
-- [ ] **Step 2: Run RED**
+- [x] **Step 2: Run RED**
 
 Run:
 
@@ -284,7 +284,7 @@ python -m unittest tests.test_game_reverse_executors
 
 Expected: fail because `build_prompt()` and `build_command()` do not exist.
 
-- [ ] **Step 3: Implement command and prompt builders**
+- [x] **Step 3: Implement command and prompt builders**
 
 Update `game_reverse/executors.py`:
 
@@ -330,7 +330,7 @@ Add methods to `ClaudePrintExecutor`:
         return ["claude", "-p", "--output-format", "stream-json", prompt]
 ```
 
-- [ ] **Step 4: Run GREEN**
+- [x] **Step 4: Run GREEN**
 
 Run:
 
@@ -346,7 +346,7 @@ Expected: pass.
 - Modify: `tests/test_game_reverse_executors.py`
 - Modify: `game_reverse/executors.py`
 
-- [ ] **Step 1: Add failing parser tests**
+- [x] **Step 1: Add failing parser tests**
 
 Append to `tests/test_game_reverse_executors.py`:
 
@@ -394,7 +394,7 @@ class TestExecutorEventParsers(unittest.TestCase):
         self.assertEqual(events[0]["raw"]["nested"]["password"], "[redacted]")
 ```
 
-- [ ] **Step 2: Run RED**
+- [x] **Step 2: Run RED**
 
 Run:
 
@@ -404,7 +404,7 @@ python -m unittest tests.test_game_reverse_executors
 
 Expected: fail because `parse_events()` does not exist.
 
-- [ ] **Step 3: Implement parser and redaction helpers**
+- [x] **Step 3: Implement parser and redaction helpers**
 
 Update `game_reverse/executors.py`:
 
@@ -494,7 +494,7 @@ Add methods to `ClaudePrintExecutor`:
         return parse_jsonl_events(lines, self.id, claude_message)
 ```
 
-- [ ] **Step 4: Run GREEN**
+- [x] **Step 4: Run GREEN**
 
 Run:
 
@@ -510,7 +510,7 @@ Expected: pass.
 - Modify: `tests/test_game_reverse_web_service.py`
 - Modify: `game_reverse/web_service.py`
 
-- [ ] **Step 1: Add failing service integration tests**
+- [x] **Step 1: Add failing service integration tests**
 
 Modify `tests/test_game_reverse_web_service.py`.
 
@@ -556,7 +556,7 @@ Update the existing `test_rejects_unknown_runner` to use an actually unknown run
         payload["runner"] = "unknown_runner"
 ```
 
-- [ ] **Step 2: Run RED**
+- [x] **Step 2: Run RED**
 
 Run:
 
@@ -566,7 +566,7 @@ python -m unittest tests.test_game_reverse_web_service
 
 Expected: fail because the current service rejects `codex_exec` as a phase error instead of registry unavailable, and health is still hard-coded.
 
-- [ ] **Step 3: Integrate registry in `web_service`**
+- [x] **Step 3: Integrate registry in `web_service`**
 
 Update imports in `game_reverse/web_service.py`:
 
@@ -664,7 +664,7 @@ Important: Disabled runners will create a run and fail in the background if the 
             raise ValidationError("runner is not available")
 ```
 
-- [ ] **Step 4: Run GREEN**
+- [x] **Step 4: Run GREEN**
 
 Run:
 
@@ -679,7 +679,7 @@ Expected: pass.
 **Files:**
 - Verify only unless failures require fixes.
 
-- [ ] **Step 1: Run focused test suite**
+- [x] **Step 1: Run focused test suite**
 
 Run:
 
@@ -689,7 +689,7 @@ python -m unittest tests.test_game_reverse_executors tests.test_game_reverse_web
 
 Expected: all tests pass.
 
-- [ ] **Step 2: Run JS syntax check**
+- [x] **Step 2: Run JS syntax check**
 
 Run:
 
@@ -699,7 +699,7 @@ node --check web/app.js
 
 Expected: exit code 0.
 
-- [ ] **Step 3: Start backend smoke server**
+- [x] **Step 3: Start backend smoke server**
 
 Run:
 
@@ -721,7 +721,7 @@ Verify:
 - `codex_exec` and `claude_print` are still presented as planned/unavailable
 - do not click start unless the user explicitly asks for a real run
 
-- [ ] **Step 4: Stop smoke server**
+- [x] **Step 4: Stop smoke server**
 
 Stop the backend process started in Step 3.
 
@@ -734,7 +734,7 @@ Stop the backend process started in Step 3.
 - Modify: `tests/test_game_reverse_web_service.py`
 - Modify: `docs/superpowers/plans/2026-06-17-executor-adapter-layer.md`
 
-- [ ] **Step 1: Final checks**
+- [x] **Step 1: Final checks**
 
 Run:
 

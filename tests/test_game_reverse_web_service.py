@@ -80,6 +80,16 @@ class TestGameReverseWebService(unittest.TestCase):
         self.assertEqual(health["runners"][0]["id"], "game_reverse")
         self.assertTrue(health["runners"][0]["available"])
 
+    def test_health_uses_executor_registry_metadata(self):
+        service = self.make_service()
+
+        health = service.health()
+
+        runners = {runner["id"]: runner for runner in health["runners"]}
+        self.assertTrue(runners["game_reverse"]["available"])
+        self.assertFalse(runners["codex_exec"]["available"])
+        self.assertFalse(runners["claude_print"]["available"])
+
     def test_start_run_validates_and_invokes_game_reverse_runner(self):
         service = self.make_service()
 
@@ -114,9 +124,25 @@ class TestGameReverseWebService(unittest.TestCase):
     def test_rejects_unknown_runner(self):
         service = self.make_service()
         payload = self.valid_payload()
-        payload["runner"] = "codex_exec"
+        payload["runner"] = "unknown_runner"
 
         with self.assertRaisesRegex(ValidationError, "runner"):
+            service.start_run(payload)
+
+    def test_rejects_disabled_codex_runner_as_unavailable(self):
+        service = self.make_service()
+        payload = self.valid_payload()
+        payload["runner"] = "codex_exec"
+
+        with self.assertRaisesRegex(ValidationError, "not available"):
+            service.start_run(payload)
+
+    def test_rejects_disabled_claude_runner_as_unavailable(self):
+        service = self.make_service()
+        payload = self.valid_payload()
+        payload["runner"] = "claude_print"
+
+        with self.assertRaisesRegex(ValidationError, "not available"):
             service.start_run(payload)
 
     def test_rejects_tap_without_explicit_opt_in(self):
