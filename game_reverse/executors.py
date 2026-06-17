@@ -13,6 +13,10 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SECRET_PROMPT_KEYS = {"api_key", "authorization", "token", "secret", "password"}
 REDACTED_VALUE = "[redacted]"
 SECRET_KEY_PARTS = ("key", "token", "secret", "password", "authorization")
+CODEX_STDOUT_FILENAME = "codex_stdout.jsonl"
+CODEX_STDERR_FILENAME = "codex_stderr.log"
+CODEX_LAST_MESSAGE_FILENAME = "codex_last_message.txt"
+FINAL_REPORT_FILENAME = "final_report.md"
 
 
 class ExecutorError(ValueError):
@@ -84,7 +88,80 @@ class CodexExecExecutor:
         }
 
     def start(self, config, payload, context=None):
-        raise ExecutorUnavailableError("runner is not available")
+        if not self.available:
+            raise ExecutorUnavailableError("runner is not available")
+        if context is None:
+            raise ExecutorError("run context is required")
+
+        os.makedirs(context.run_dir, exist_ok=True)
+        repo_root = validate_repo_root(self.project_root, self.project_root)
+        stdout_path = os.path.join(context.run_dir, CODEX_STDOUT_FILENAME)
+        stderr_path = os.path.join(context.run_dir, CODEX_STDERR_FILENAME)
+        final_message_path = os.path.join(context.run_dir, CODEX_LAST_MESSAGE_FILENAME)
+        report_path = os.path.join(context.run_dir, FINAL_REPORT_FILENAME)
+
+        prompt = self.build_prompt(payload, config)
+        args = self.build_command(
+            prompt,
+            repo_root=repo_root,
+            final_message_path=final_message_path,
+        )
+
+        try:
+            process = self.popen_factory(
+                args,
+                cwd=repo_root,
+                shell=False,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+            )
+        except OSError as exc:
+            raise ExecutorError("failed to start codex exec: %s" % exc)
+
+        context.emit_event(
+            "runner_process_started",
+            source=self.id,
+            command=self.command_for_event(args),
+            cwd=repo_root,
+        )
+
+        stdout_thread = threading.Thread(
+            target=self._drain_stdout,
+            args=(process.stdout, stdout_path, context),
+            daemon=True,
+        )
+        stderr_thread = threading.Thread(
+            target=self._drain_stderr,
+            args=(process.stderr, stderr_path, context),
+            daemon=True,
+        )
+        stdout_thread.start()
+        stderr_thread.start()
+
+        return_code = process.wait(timeout=self.timeout_seconds)
+        stdout_thread.join(timeout=2)
+        stderr_thread.join(timeout=2)
+
+        if return_code != 0:
+            context.emit_event(
+                "runner_process_failed",
+                source=self.id,
+                exit_code=return_code,
+            )
+            raise ExecutorError("codex exec exited with code %s" % return_code)
+
+        self._write_final_report(
+            report_path=report_path,
+            context=context,
+            config=config,
+            payload=payload,
+            final_message_path=final_message_path,
+            exit_code=return_code,
+        )
+        return context.run_dir
 
     def build_prompt(self, payload, config):
         return build_runner_prompt(payload, self.id, config=config)
@@ -115,6 +192,81 @@ class CodexExecExecutor:
 
     def parse_events(self, lines):
         return parse_jsonl_events(lines, self.id, codex_message)
+
+    def command_for_event(self, args):
+        if not args:
+            return []
+        return list(args[:-1]) + ["[prompt]"]
+
+    def _drain_stdout(self, stream, stdout_path, context):
+        with open(stdout_path, "w", encoding="utf-8") as stdout_file:
+            for line in stream or []:
+                stdout_file.write(line)
+                stdout_file.flush()
+                for event in self.parse_events([line]):
+                    self._emit_parsed_event(context, event)
+
+    def _drain_stderr(self, stream, stderr_path, context):
+        with open(stderr_path, "w", encoding="utf-8") as stderr_file:
+            for line in stream or []:
+                stderr_file.write(line)
+                stderr_file.flush()
+                message = line.strip()
+                if message:
+                    context.emit_event(
+                        "runner_stderr",
+                        source=self.id,
+                        message=message[:300],
+                    )
+
+    def _emit_parsed_event(self, context, event):
+        event_type = event.get("type", "runner_event")
+        extra = dict(event)
+        extra.pop("type", None)
+        context.emit_event(event_type, **extra)
+
+    def _write_final_report(
+        self,
+        report_path,
+        context,
+        config,
+        payload,
+        final_message_path,
+        exit_code,
+    ):
+        final_message = ""
+        if os.path.exists(final_message_path):
+            with open(final_message_path, "r", encoding="utf-8") as message_file:
+                final_message = message_file.read().strip()
+
+        mission = payload.get("mission") or {}
+        if config is not None:
+            mission = getattr(config, "mission", None) or mission
+        mission_goal = getattr(mission, "goal", None)
+        if mission_goal is None and isinstance(mission, dict):
+            mission_goal = mission.get("goal", "")
+        mission_goal = mission_goal or ""
+
+        lines = [
+            "# Codex Exec Run",
+            "",
+            "- Run ID: %s" % context.run_id,
+            "- Runner: %s" % self.id,
+            "- Package: %s" % payload.get("package_name", ""),
+            "- Mission goal: %s" % mission_goal,
+            "- Exit code: %s" % exit_code,
+            "",
+            "## Final Message",
+            "",
+            final_message or "(no final message captured)",
+            "",
+            "## Logs",
+            "",
+            "- stdout: %s" % CODEX_STDOUT_FILENAME,
+            "- stderr: %s" % CODEX_STDERR_FILENAME,
+        ]
+        with open(report_path, "w", encoding="utf-8") as report:
+            report.write("\n".join(lines) + "\n")
 
 
 @dataclass

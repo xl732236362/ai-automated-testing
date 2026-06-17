@@ -2,6 +2,7 @@
 """Tests for game explorer executor adapters."""
 
 import os
+import tempfile
 import unittest
 
 from game_reverse.executors import (
@@ -12,6 +13,35 @@ from game_reverse.executors import (
     create_default_registry,
     validate_repo_root,
 )
+
+
+class FakeProcess:
+    def __init__(self, stdout_lines=None, stderr_lines=None, returncode=0):
+        self.stdout = stdout_lines or []
+        self.stderr = stderr_lines or []
+        self.returncode = returncode
+        self.terminated = False
+        self.killed = False
+
+    def wait(self, timeout=None):
+        return self.returncode
+
+    def terminate(self):
+        self.terminated = True
+
+    def kill(self):
+        self.killed = True
+
+
+def make_context(run_id, run_dir, events):
+    from game_reverse.executors import ExecutorRunContext
+
+    def emit_event(event_type, **extra):
+        event = {"type": event_type}
+        event.update(extra)
+        events.append(event)
+
+    return ExecutorRunContext(run_id=run_id, run_dir=run_dir, emit_event=emit_event)
 
 
 class TestExecutorRegistry(unittest.TestCase):
@@ -234,6 +264,65 @@ class TestExecutorEventParsers(unittest.TestCase):
 
         self.assertEqual(events[0]["raw"]["api_key"], "[redacted]")
         self.assertEqual(events[0]["raw"]["nested"]["password"], "[redacted]")
+
+
+class TestCodexExecProcess(unittest.TestCase):
+    def payload(self):
+        return {
+            "package_name": "com.example.game",
+            "device_uri": "Android:///emulator-5554",
+            "allowed_actions": ["screenshot", "wait", "back"],
+            "max_steps": 2,
+            "mission": {
+                "type": "free_explore",
+                "goal": "Explore tutorial",
+                "targets": ["start button"],
+                "success_criteria": ["write report"],
+            },
+        }
+
+    def test_codex_start_streams_events_and_writes_logs(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            events = []
+            calls = []
+
+            def fake_popen(args, **kwargs):
+                calls.append((args, kwargs))
+                final_path = args[args.index("--output-last-message") + 1]
+                with open(final_path, "w", encoding="utf-8") as last_message:
+                    last_message.write("Final Codex summary")
+                return FakeProcess(
+                    stdout_lines=[
+                        '{"type": "started", "message": "run started"}\n',
+                        '{"type": "assistant_message", "message": "observed screen"}\n',
+                    ],
+                    stderr_lines=["diagnostic line\n"],
+                    returncode=0,
+                )
+
+            executor = CodexExecExecutor(
+                project_root=os.getcwd(),
+                enabled=True,
+                popen_factory=fake_popen,
+                which=lambda command: command,
+            )
+            context = make_context("run-001", os.path.join(tmpdir, "run-001"), events)
+
+            session_dir = executor.start(config=None, payload=self.payload(), context=context)
+
+            self.assertEqual(session_dir, context.run_dir)
+            self.assertEqual(calls[0][1]["cwd"], os.path.abspath(os.getcwd()))
+            self.assertFalse(calls[0][1]["shell"])
+            self.assertTrue(os.path.exists(os.path.join(session_dir, "codex_stdout.jsonl")))
+            self.assertTrue(os.path.exists(os.path.join(session_dir, "codex_stderr.log")))
+            self.assertTrue(os.path.exists(os.path.join(session_dir, "codex_last_message.txt")))
+            with open(os.path.join(session_dir, "final_report.md"), encoding="utf-8") as report_file:
+                report = report_file.read()
+            self.assertIn("Final Codex summary", report)
+            self.assertTrue(any(event["type"] == "runner_process_started" for event in events))
+            self.assertTrue(any(event.get("message") == "run started" for event in events))
+            self.assertTrue(any(event.get("message") == "observed screen" for event in events))
+            self.assertTrue(any(event["type"] == "runner_stderr" for event in events))
 
 
 if __name__ == "__main__":
