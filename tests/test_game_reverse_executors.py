@@ -16,7 +16,10 @@ from game_reverse.executors import (
 
 class TestExecutorRegistry(unittest.TestCase):
     def test_default_registry_lists_all_runner_metadata(self):
-        registry = create_default_registry(runner=lambda config: "session-dir")
+        registry = create_default_registry(
+            runner=lambda config: "session-dir",
+            environ={},
+        )
 
         runners = registry.metadata()
 
@@ -24,6 +27,53 @@ class TestExecutorRegistry(unittest.TestCase):
         self.assertTrue(runners[0]["available"])
         self.assertFalse(runners[1]["available"])
         self.assertFalse(runners[2]["available"])
+
+    def test_codex_exec_is_available_when_enabled_and_binary_exists(self):
+        registry = create_default_registry(
+            runner=lambda config: "session-dir",
+            environ={"GAME_REVERSE_ENABLE_CODEX_EXEC": "1"},
+            codex_which=lambda command: "C:/tools/codex.cmd",
+        )
+
+        runners = {runner["id"]: runner for runner in registry.metadata()}
+
+        self.assertTrue(runners["codex_exec"]["available"])
+        self.assertIn("Codex", runners["codex_exec"]["description"])
+
+    def test_codex_exec_is_unavailable_when_enabled_but_binary_missing(self):
+        registry = create_default_registry(
+            runner=lambda config: "session-dir",
+            environ={"GAME_REVERSE_ENABLE_CODEX_EXEC": "1"},
+            codex_which=lambda command: None,
+        )
+
+        runners = {runner["id"]: runner for runner in registry.metadata()}
+
+        self.assertFalse(runners["codex_exec"]["available"])
+        self.assertIn("not found", runners["codex_exec"]["description"])
+
+    def test_codex_exec_reads_environment_options(self):
+        registry = create_default_registry(
+            runner=lambda config: "session-dir",
+            environ={
+                "GAME_REVERSE_ENABLE_CODEX_EXEC": "1",
+                "GAME_REVERSE_CODEX_COMMAND": "codex-custom",
+                "GAME_REVERSE_CODEX_TIMEOUT_SECONDS": "123",
+                "GAME_REVERSE_CODEX_SANDBOX": "read-only",
+                "GAME_REVERSE_CODEX_PROFILE": "local",
+                "GAME_REVERSE_CODEX_MODEL": "gpt-5.1-codex",
+            },
+            codex_which=lambda command: "C:/tools/%s.cmd" % command,
+        )
+
+        executor = registry.get("codex_exec")
+
+        self.assertTrue(executor.available)
+        self.assertEqual(executor.command, "codex-custom")
+        self.assertEqual(executor.timeout_seconds, 123)
+        self.assertEqual(executor.sandbox, "read-only")
+        self.assertEqual(executor.profile, "local")
+        self.assertEqual(executor.model, "gpt-5.1-codex")
 
     def test_registry_rejects_unknown_runner(self):
         registry = ExecutorRegistry([GameReverseExecutor(lambda config: "session-dir")])

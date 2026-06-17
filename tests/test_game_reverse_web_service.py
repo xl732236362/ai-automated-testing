@@ -7,7 +7,7 @@ import threading
 import time
 import unittest
 
-from game_reverse.executors import ExecutorRegistry
+from game_reverse.executors import ExecutorRegistry, create_default_registry
 from game_reverse.web_service import GameReverseWebService, ValidationError
 
 
@@ -72,7 +72,11 @@ class TestGameReverseWebService(unittest.TestCase):
         self.tmpdir = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmpdir.cleanup)
         self.runner = FakeRunner()
-        return GameReverseWebService(output_root=self.tmpdir.name, runner=self.runner)
+        return GameReverseWebService(
+            output_root=self.tmpdir.name,
+            runner=self.runner,
+            executors=create_default_registry(self.runner, environ={}),
+        )
 
     def wait_for_status(self, service, run_id, expected_status, timeout=2):
         deadline = time.time() + timeout

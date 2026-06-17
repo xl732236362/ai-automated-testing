@@ -3,7 +3,10 @@
 
 import json
 import os
-from dataclasses import dataclass
+import shutil
+import subprocess
+import threading
+from dataclasses import dataclass, field
 
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -50,10 +53,27 @@ class GameReverseExecutor:
 @dataclass
 class CodexExecExecutor:
     project_root: str = PROJECT_ROOT
+    enabled: bool = False
+    command: str = "codex"
+    timeout_seconds: int = 900
+    sandbox: str = "workspace-write"
+    profile: str = ""
+    model: str = ""
+    popen_factory: object = field(default=subprocess.Popen, repr=False)
+    which: object = field(default=shutil.which, repr=False)
     id: str = "codex_exec"
     name: str = "Codex CLI"
-    available: bool = False
-    description: str = "Planned executor adapter; not enabled in this phase."
+    description: str = (
+        "Codex CLI runner is disabled. Set GAME_REVERSE_ENABLE_CODEX_EXEC=1 to enable it."
+    )
+
+    def __post_init__(self):
+        self.command_path = self.which(self.command) if self.command else None
+        self.available = bool(self.enabled and self.command_path)
+        if self.available:
+            self.description = "Run local Codex CLI non-interactively with codex exec."
+        elif self.enabled:
+            self.description = "Codex CLI command not found: %s" % self.command
 
     def metadata(self):
         return {
@@ -120,14 +140,47 @@ class ExecutorRegistry:
         return self.executors[runner_id]
 
 
-def create_default_registry(runner):
+def create_default_registry(runner, environ=None, codex_which=None, codex_popen_factory=None):
+    if environ is None:
+        environ = os.environ
+    if codex_which is None:
+        codex_which = shutil.which
+    if codex_popen_factory is None:
+        codex_popen_factory = subprocess.Popen
     return ExecutorRegistry(
         [
             GameReverseExecutor(runner),
-            CodexExecExecutor(),
+            CodexExecExecutor(
+                enabled=env_flag_enabled(environ.get("GAME_REVERSE_ENABLE_CODEX_EXEC")),
+                command=environ.get("GAME_REVERSE_CODEX_COMMAND", "codex") or "codex",
+                timeout_seconds=parse_positive_int(
+                    environ.get("GAME_REVERSE_CODEX_TIMEOUT_SECONDS"),
+                    900,
+                ),
+                sandbox=environ.get("GAME_REVERSE_CODEX_SANDBOX", "workspace-write")
+                or "workspace-write",
+                profile=environ.get("GAME_REVERSE_CODEX_PROFILE", "") or "",
+                model=environ.get("GAME_REVERSE_CODEX_MODEL", "") or "",
+                which=codex_which,
+                popen_factory=codex_popen_factory,
+            ),
             ClaudePrintExecutor(),
         ]
     )
+
+
+def env_flag_enabled(value):
+    return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def parse_positive_int(value, default):
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return default
+    if parsed <= 0:
+        return default
+    return parsed
 
 
 def build_runner_prompt(payload, runner_id):
