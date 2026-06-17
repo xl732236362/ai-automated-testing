@@ -69,6 +69,7 @@ Pipfile.lock
 *.sublime-workspace
 
 .worktrees/
+.superpowers/
 .env
 game_reverse/outputs/
 game_reverse/*.config.json
