@@ -373,6 +373,13 @@ li {
   padding: 14px;
 }
 
+.event-log,
+.session-list {
+  display: grid;
+  gap: 8px;
+  padding: 0 14px 14px;
+}
+
 .timeline-item {
   display: grid;
   grid-template-columns: 44px minmax(0, 1fr) 88px;
@@ -488,6 +495,53 @@ li {
 .report-preview,
 .output-list {
   padding: 12px;
+}
+
+.session-list {
+  border-bottom: 1px solid var(--line);
+}
+
+.event-item,
+.session-item,
+.empty-block {
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--surface-soft);
+}
+
+.event-item {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr);
+  gap: 8px;
+  padding: 8px 9px;
+  font-size: 12px;
+}
+
+.event-item strong {
+  color: var(--accent-strong);
+}
+
+.event-item span {
+  overflow-wrap: anywhere;
+  color: var(--muted);
+}
+
+.session-item {
+  min-height: 34px;
+  padding: 7px 9px;
+  color: var(--text);
+  text-align: left;
+}
+
+.session-item:disabled {
+  color: var(--faint);
+}
+
+.empty-block {
+  margin: 0;
+  padding: 9px;
+  color: var(--muted);
+  font-size: 13px;
 }
 
 .risk-list {

@@ -2,6 +2,7 @@
 """Local service boundary for the game explorer web console."""
 
 import os
+import threading
 import time
 
 from game_reverse.config import DEFAULT_ALLOWED_ACTIONS, GameReverseConfig
@@ -21,6 +22,9 @@ class GameReverseWebService:
         self.output_root = output_root or "game_reverse/outputs/sessions"
         self.runner = runner or run_loop
         self.runs = {}
+        self.events = {}
+        self.lock = threading.Lock()
+        self.run_counter = 0
 
     def health(self):
         return {
@@ -57,35 +61,36 @@ class GameReverseWebService:
 
     def start_run(self, payload):
         config = self._config_from_payload(payload)
-        run_id = time.strftime("%Y%m%d-%H%M%S")
+        run_id = self._next_run_id()
         record = {
             "id": run_id,
             "runner": "game_reverse",
-            "status": "running",
+            "status": "queued",
             "session_dir": None,
             "started_at": run_id,
         }
-        self.runs[run_id] = record
+        with self.lock:
+            self.runs[run_id] = record
+            self.events[run_id] = []
+            self._append_event_locked(run_id, "run_queued")
 
-        try:
-            session_dir = self.runner(config)
-        except Exception as exc:
-            record.update(
-                {
-                    "status": "failed",
-                    "error_type": exc.__class__.__name__,
-                    "error": str(exc),
-                }
-            )
-            raise
+        thread = threading.Thread(target=self._run_background, args=(run_id, config))
+        thread.daemon = True
+        thread.start()
 
-        record.update({"status": "completed", "session_dir": session_dir})
         return dict(record)
 
     def get_run(self, run_id):
-        if run_id not in self.runs:
-            raise KeyError(run_id)
-        return dict(self.runs[run_id])
+        with self.lock:
+            if run_id not in self.runs:
+                raise KeyError(run_id)
+            return dict(self.runs[run_id])
+
+    def run_events(self, run_id):
+        with self.lock:
+            if run_id not in self.events:
+                raise KeyError(run_id)
+            return [dict(event) for event in self.events[run_id]]
 
     def list_sessions(self):
         if not os.path.isdir(self.output_root):
@@ -106,14 +111,21 @@ class GameReverseWebService:
                 )
         return sessions
 
-    def session_report(self, run_id):
-        record = self.get_run(run_id)
-        session_dir = record.get("session_dir")
+    def session_report(self, session_id):
+        session_dir = None
+        try:
+            record = self.get_run(session_id)
+            session_dir = record.get("session_dir")
+        except KeyError:
+            candidate = os.path.join(self.output_root, session_id)
+            if os.path.isdir(candidate):
+                session_dir = candidate
+
         if not session_dir:
-            raise FileNotFoundError(run_id)
+            raise FileNotFoundError(session_id)
 
         return {
-            "id": run_id,
+            "id": session_id,
             "session_dir": session_dir,
             "mission_draft": self._read_optional(session_dir, "mission_draft.md"),
             "final_report": self._read_optional(session_dir, "final_report.md"),
@@ -155,6 +167,51 @@ class GameReverseWebService:
             llm_retry_count=payload.get("llm_retry_count", 1),
             consecutive_failure_limit=payload.get("consecutive_failure_limit", 3),
         )
+
+    def _next_run_id(self):
+        timestamp = time.strftime("%Y%m%d-%H%M%S")
+        with self.lock:
+            self.run_counter += 1
+            return "%s-%03d" % (timestamp, self.run_counter)
+
+    def _run_background(self, run_id, config):
+        with self.lock:
+            record = self.runs[run_id]
+            record["status"] = "running"
+            self._append_event_locked(run_id, "run_started")
+
+        try:
+            session_dir = self.runner(config)
+        except Exception as exc:
+            with self.lock:
+                record = self.runs[run_id]
+                record.update(
+                    {
+                        "status": "failed",
+                        "error_type": exc.__class__.__name__,
+                        "error": str(exc),
+                    }
+                )
+                self._append_event_locked(
+                    run_id,
+                    "run_failed",
+                    error_type=exc.__class__.__name__,
+                    error=str(exc),
+                )
+            return
+
+        with self.lock:
+            record = self.runs[run_id]
+            record.update({"status": "completed", "session_dir": session_dir})
+            self._append_event_locked(run_id, "run_completed", session_dir=session_dir)
+
+    def _append_event_locked(self, run_id, event_type, **extra):
+        event = {
+            "type": event_type,
+            "created_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+        }
+        event.update(extra)
+        self.events[run_id].append(event)
 
     def _read_optional(self, session_dir, filename):
         path = os.path.join(session_dir, filename)

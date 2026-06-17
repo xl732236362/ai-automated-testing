@@ -48,7 +48,7 @@ This phase should not implement:
 - Modify: `tests/test_game_reverse_web_service.py`
 - Modify: `game_reverse/web_service.py`
 
-- [ ] **Step 1: Add failing service tests**
+- [x] **Step 1: Add failing service tests**
 
 Add tests for:
 
@@ -76,7 +76,7 @@ Assertions:
 - after releasing the runner, `get_run(run_id)` eventually reports `completed`.
 - `session_report(run_id)` reads `# Slow Report`.
 
-- [ ] **Step 2: Run RED**
+- [x] **Step 2: Run RED**
 
 Run:
 
@@ -86,7 +86,7 @@ python -m unittest tests.test_game_reverse_web_service
 
 Expected: fail because `run_events` and background behavior do not exist.
 
-- [ ] **Step 3: Implement background run registry**
+- [x] **Step 3: Implement background run registry**
 
 Update `GameReverseWebService`:
 
@@ -97,7 +97,7 @@ Update `GameReverseWebService`:
 - return immediately from `start_run`
 - add `run_events(run_id)`
 
-- [ ] **Step 4: Run GREEN**
+- [x] **Step 4: Run GREEN**
 
 Run:
 
@@ -113,7 +113,7 @@ Expected: pass.
 - Modify: `tests/test_game_reverse_web_server.py`
 - Modify: `game_reverse/web_server.py`
 
-- [ ] **Step 1: Add failing HTTP tests**
+- [x] **Step 1: Add failing HTTP tests**
 
 Add tests for:
 
@@ -127,7 +127,7 @@ Expected event response:
 {"id": "fake-run", "events": [{"type": "run_started"}]}
 ```
 
-- [ ] **Step 2: Run RED**
+- [x] **Step 2: Run RED**
 
 Run:
 
@@ -137,7 +137,7 @@ python -m unittest tests.test_game_reverse_web_server
 
 Expected: fail because events route is not implemented or fake service contract is incomplete.
 
-- [ ] **Step 3: Implement routes**
+- [x] **Step 3: Implement routes**
 
 Update `web_server`:
 
@@ -146,7 +146,7 @@ Update `web_server`:
 - keep `/api/sessions/<id>/report`
 - return JSON errors consistently.
 
-- [ ] **Step 4: Run GREEN**
+- [x] **Step 4: Run GREEN**
 
 Run:
 
@@ -164,7 +164,7 @@ Expected: pass.
 - Modify: `web/styles.css`
 - Modify: `tests/test_web_console_static.py`
 
-- [ ] **Step 1: Add UI hook tests**
+- [x] **Step 1: Add UI hook tests**
 
 Update static tests to assert:
 
@@ -174,7 +174,7 @@ Update static tests to assert:
 - `app.js` contains `/api/runs/`.
 - `app.js` still does not contain `child_process`, `codex exec`, or `claude -p`.
 
-- [ ] **Step 2: Run RED**
+- [x] **Step 2: Run RED**
 
 Run:
 
@@ -184,7 +184,7 @@ python -m unittest tests.test_web_console_static
 
 Expected: fail because UI hooks and polling do not exist.
 
-- [ ] **Step 3: Add UI containers**
+- [x] **Step 3: Add UI containers**
 
 Add:
 
@@ -195,7 +195,7 @@ Add:
 
 Place event log below timeline and session list in the right inspector or reports area.
 
-- [ ] **Step 4: Implement polling in JS**
+- [x] **Step 4: Implement polling in JS**
 
 Add:
 
@@ -214,11 +214,11 @@ Rules:
 - On completed, load report and update output panel.
 - On failed, show error in run state.
 
-- [ ] **Step 5: Style event/session panels**
+- [x] **Step 5: Style event/session panels**
 
 Add compact list styles for event log and session list. Ensure mobile layout still stacks cleanly.
 
-- [ ] **Step 6: Run GREEN**
+- [x] **Step 6: Run GREEN**
 
 Run:
 
@@ -236,14 +236,14 @@ Expected: pass.
 - Modify: `web/app.js`
 - Modify: `tests/test_web_console_static.py`
 
-- [ ] **Step 1: Add failing test for safe default**
+- [x] **Step 1: Add failing test for safe default**
 
 Update `tests/test_web_console_static.py` to assert:
 
 - sample config default `allowed_actions` contains only `screenshot`, `wait`, `back`
 - `enable_unsafe_actions` is not true in the default start payload path.
 
-- [ ] **Step 2: Run RED**
+- [x] **Step 2: Run RED**
 
 Run:
 
@@ -253,7 +253,7 @@ python -m unittest tests.test_web_console_static
 
 Expected: fail because current sample data includes `tap` and `swipe`.
 
-- [ ] **Step 3: Make the sample payload safe**
+- [x] **Step 3: Make the sample payload safe**
 
 Update `web/data/sample-run.json`:
 
@@ -263,7 +263,7 @@ Update `web/data/sample-run.json`:
 
 Keep UI copy explaining tap/swipe as later opt-in actions, but do not include them in the default runnable payload.
 
-- [ ] **Step 4: Run GREEN**
+- [x] **Step 4: Run GREEN**
 
 Run:
 
@@ -278,7 +278,7 @@ Expected: pass.
 **Files:**
 - No code changes unless smoke finds a bug.
 
-- [ ] **Step 1: Run tests**
+- [x] **Step 1: Run tests**
 
 Run:
 
@@ -288,7 +288,7 @@ python -m unittest tests.test_game_reverse_web_service tests.test_game_reverse_w
 
 Expected: all pass.
 
-- [ ] **Step 2: Start backend**
+- [x] **Step 2: Start backend**
 
 Run:
 
@@ -302,7 +302,7 @@ Open:
 http://127.0.0.1:8767/web/index.html
 ```
 
-- [ ] **Step 3: Smoke without emulator side effects**
+- [x] **Step 3: Smoke without emulator side effects**
 
 Use a test payload or fake runner in unit tests for automation. For manual UI, verify:
 
@@ -315,7 +315,7 @@ Use a test payload or fake runner in unit tests for automation. For manual UI, v
 **Files:**
 - All changed files from Tasks 1-4.
 
-- [ ] **Step 1: Final checks**
+- [x] **Step 1: Final checks**
 
 Run:
 

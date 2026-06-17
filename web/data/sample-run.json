@@ -20,9 +20,7 @@
     "allowed_actions": [
       "screenshot",
       "wait",
-      "back",
-      "tap",
-      "swipe"
+      "back"
     ],
     "max_steps": 50,
     "recent_steps": 5,

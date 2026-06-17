@@ -28,8 +28,11 @@ class TestWebConsoleStatic(unittest.TestCase):
 
         self.assertIn('lang="zh-CN"', html)
         self.assertIn('href="styles.css"', html)
+        self.assertIn('rel="icon"', html)
         self.assertIn('src="app.js"', html)
         self.assertIn('data-sample-url="data/sample-run.json"', html)
+        self.assertIn('id="event-log"', html)
+        self.assertIn('id="session-list"', html)
         self.assertIn("App/Game 探索控制台", html)
 
     def test_sample_run_json_has_required_shape(self):
@@ -46,12 +49,16 @@ class TestWebConsoleStatic(unittest.TestCase):
         self.assertGreaterEqual(len(data["run"]["steps"]), 3)
         self.assertIn("session_dir", data["run"]["outputs"])
         self.assertIn("final_report", data["run"]["outputs"])
+        self.assertEqual(data["config"]["allowed_actions"], ["screenshot", "wait", "back"])
 
     def test_app_declares_static_only_boundary(self):
         script = (WEB_DIR / "app.js").read_text(encoding="utf-8")
 
         self.assertIn("STATIC_ONLY", script)
         self.assertIn("fetch(sampleUrl)", script)
+        self.assertIn("pollRun", script)
+        self.assertIn("/api/runs/", script)
+        self.assertIn("enable_unsafe_actions: false", script)
         self.assertNotIn("child_process", script)
         self.assertNotIn("codex exec", script)
         self.assertNotIn("claude -p", script)

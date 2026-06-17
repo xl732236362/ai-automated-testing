@@ -2,6 +2,7 @@ const STATIC_ONLY = false;
 const API_BASE = "";
 let currentData = null;
 let backendOnline = false;
+let pollTimer = null;
 
 const ACTION_LABELS = {
   screenshot: "截图",
@@ -45,6 +46,8 @@ function renderConsole(data) {
   renderTimeline(data.run.steps);
   renderRisks(data.run.steps);
   renderReport(data.run);
+  renderEvents([]);
+  renderSessions([]);
   markStaticControls();
 }
 
@@ -186,37 +189,36 @@ function markStaticControls() {
 function wireStartButton() {
   const button = document.getElementById("start-run-button");
   button.addEventListener("click", () => {
-    if (!backendOnline || !currentData) {
-      return;
-    }
-
-    button.disabled = true;
-    setRunState("运行中", "正在通过本地后端启动 game_reverse runner。");
-    const payload = buildRunPayload(currentData.config);
-    fetch(`${API_BASE}/api/runs`, {
-      method: "POST",
-      headers: {"Content-Type": "application/json"},
-      body: JSON.stringify(payload),
-    })
-      .then((response) => {
-        if (!response.ok) {
-          return response.json().then((error) => {
-            throw new Error(error.error || `启动失败: ${response.status}`);
-          });
-        }
-        return response.json();
-      })
-      .then((run) => {
-        setRunState(run.status === "completed" ? "运行完成" : run.status, run.session_dir || "");
-        updateOutputsFromRun(run);
-      })
-      .catch((error) => {
-        setRunState("运行失败", error.message);
-      })
-      .finally(() => {
-        button.disabled = false;
-      });
+    startRun();
   });
+}
+
+function startRun() {
+  const button = document.getElementById("start-run-button");
+  if (!backendOnline || !currentData || button.disabled) {
+    return;
+  }
+
+  button.disabled = true;
+  clearPollTimer();
+  setRunState("排队中", "正在通过本地后端启动 game_reverse runner。");
+  renderEvents([]);
+
+  const payload = buildRunPayload(currentData.config);
+  fetch(`${API_BASE}/api/runs`, {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify(payload),
+  })
+    .then((response) => readJsonOrThrow(response, "启动失败"))
+    .then((run) => {
+      updateOutputsFromRun(run);
+      return pollRun(run.id);
+    })
+    .catch((error) => {
+      setRunState("运行失败", error.message);
+      button.disabled = false;
+    });
 }
 
 function loadSample(sampleUrl) {
@@ -246,6 +248,77 @@ function detectBackend() {
     });
 }
 
+function pollRun(runId) {
+  return fetch(`${API_BASE}/api/runs/${encodeURIComponent(runId)}`)
+    .then((response) => readJsonOrThrow(response, "读取运行状态失败"))
+    .then((run) => {
+      updateOutputsFromRun(run);
+      setRunState(runStatusLabel(run.status), run.error || run.session_dir || run.id);
+      loadRunEvents(runId);
+
+      if (run.status === "queued" || run.status === "running") {
+        pollTimer = window.setTimeout(() => pollRun(runId), 1000);
+        return run;
+      }
+
+      const button = document.getElementById("start-run-button");
+      button.disabled = !backendOnline;
+
+      if (run.status === "completed") {
+        loadSessions();
+        if (run.session_dir) {
+          loadReport(run.id);
+        }
+      }
+
+      return run;
+    })
+    .catch((error) => {
+      setRunState("运行失败", error.message);
+      const button = document.getElementById("start-run-button");
+      button.disabled = !backendOnline;
+    });
+}
+
+function loadRunEvents(runId) {
+  return fetch(`${API_BASE}/api/runs/${encodeURIComponent(runId)}/events`)
+    .then((response) => readJsonOrThrow(response, "读取事件失败"))
+    .then((data) => {
+      renderEvents(data.events || []);
+      return data.events || [];
+    })
+    .catch((error) => {
+      renderEvents([{type: "event_error", error: error.message}]);
+      return [];
+    });
+}
+
+function loadSessions() {
+  return fetch(`${API_BASE}/api/sessions`)
+    .then((response) => readJsonOrThrow(response, "读取会话失败"))
+    .then((data) => {
+      renderSessions(data.sessions || []);
+      return data.sessions || [];
+    })
+    .catch((error) => {
+      renderSessions([{id: "error", session_dir: error.message, has_final_report: false}]);
+      return [];
+    });
+}
+
+function loadReport(sessionId) {
+  return fetch(`${API_BASE}/api/sessions/${encodeURIComponent(sessionId)}/report`)
+    .then((response) => readJsonOrThrow(response, "读取报告失败"))
+    .then((report) => {
+      renderReportPreview(report.final_report || "暂无最终报告。");
+      return report;
+    })
+    .catch((error) => {
+      renderReportPreview(error.message);
+      return null;
+    });
+}
+
 function updateBackendStatus() {
   const status = document.getElementById("backend-status");
   status.classList.toggle("is-online", backendOnline);
@@ -255,6 +328,9 @@ function updateBackendStatus() {
     ? "已连接本地 Python 后端。"
     : "未检测到本地 Python 后端，当前使用静态样例数据。";
   markStaticControls();
+  if (backendOnline) {
+    loadSessions();
+  }
 }
 
 function buildRunPayload(config) {
@@ -268,8 +344,24 @@ function buildRunPayload(config) {
     allowed_actions: config.allowed_actions,
     recent_steps: config.recent_steps,
     consecutive_failure_limit: config.consecutive_failure_limit,
-    enable_unsafe_actions: config.allowed_actions.some((action) => ["tap", "swipe"].includes(action)),
+    enable_unsafe_actions: false,
   };
+}
+
+function readJsonOrThrow(response, prefix) {
+  return response.json().then((data) => {
+    if (!response.ok) {
+      throw new Error(data.error || `${prefix}: ${response.status}`);
+    }
+    return data;
+  });
+}
+
+function clearPollTimer() {
+  if (pollTimer) {
+    window.clearTimeout(pollTimer);
+    pollTimer = null;
+  }
 }
 
 function setRunState(label, title) {
@@ -286,6 +378,103 @@ function updateOutputsFromRun(run) {
     ["会话目录", run.session_dir || "-"],
   ];
   outputs.replaceChildren(...outputEntries.map(([label, value]) => createOutput(label, value)));
+}
+
+function renderEvents(events) {
+  const log = document.getElementById("event-log");
+  if (!log) {
+    return;
+  }
+
+  if (events.length === 0) {
+    log.replaceChildren(createEmptyBlock("暂无运行事件"));
+    return;
+  }
+
+  log.replaceChildren(
+    ...events.map((event) => {
+      const item = document.createElement("div");
+      item.className = "event-item";
+
+      const type = document.createElement("strong");
+      type.textContent = eventTypeLabel(event.type);
+      const detail = document.createElement("span");
+      detail.textContent = event.error || event.session_dir || event.created_at || "";
+
+      item.append(type, detail);
+      return item;
+    })
+  );
+}
+
+function renderSessions(sessions) {
+  const list = document.getElementById("session-list");
+  if (!list) {
+    return;
+  }
+
+  if (sessions.length === 0) {
+    list.replaceChildren(createEmptyBlock("暂无历史会话"));
+    return;
+  }
+
+  list.replaceChildren(
+    ...sessions.map((session) => {
+      const button = document.createElement("button");
+      button.className = "session-item";
+      button.type = "button";
+      button.disabled = !session.has_final_report;
+      button.textContent = session.id;
+      button.title = session.session_dir || "";
+      button.addEventListener("click", () => loadReport(session.id));
+      return button;
+    })
+  );
+}
+
+function renderReportPreview(markdown) {
+  const report = document.getElementById("report-preview");
+  const lines = String(markdown)
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .slice(0, 12);
+
+  report.replaceChildren(
+    ...(lines.length > 0 ? lines : ["暂无报告内容"]).map((line) => {
+      const paragraph = document.createElement("p");
+      paragraph.textContent = line;
+      return paragraph;
+    })
+  );
+}
+
+function createEmptyBlock(text) {
+  const item = document.createElement("p");
+  item.className = "empty-block";
+  item.textContent = text;
+  return item;
+}
+
+function runStatusLabel(status) {
+  const labels = {
+    queued: "排队中",
+    running: "运行中",
+    completed: "运行完成",
+    failed: "运行失败",
+  };
+  return labels[status] || status || "未知状态";
+}
+
+function eventTypeLabel(type) {
+  const labels = {
+    run_queued: "已排队",
+    run_started: "已启动",
+    run_completed: "已完成",
+    run_failed: "已失败",
+    event_error: "事件错误",
+  };
+  return labels[type] || type;
 }
 
 function createField(label, value) {

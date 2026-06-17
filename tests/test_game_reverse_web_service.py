@@ -3,6 +3,8 @@
 
 import os
 import tempfile
+import threading
+import time
 import unittest
 
 from game_reverse.web_service import GameReverseWebService, ValidationError
@@ -22,12 +24,37 @@ class FakeRunner:
         return session_dir
 
 
+class SlowFakeRunner:
+    def __init__(self):
+        self.started = False
+        self.release = threading.Event()
+
+    def __call__(self, config):
+        self.started = True
+        self.release.wait(timeout=5)
+        session_dir = os.path.join(config.output_root, "slow-session")
+        os.makedirs(session_dir, exist_ok=True)
+        with open(os.path.join(session_dir, "final_report.md"), "w", encoding="utf-8") as report:
+            report.write("# Slow Report\n")
+        return session_dir
+
+
 class TestGameReverseWebService(unittest.TestCase):
     def make_service(self):
         self.tmpdir = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmpdir.cleanup)
         self.runner = FakeRunner()
         return GameReverseWebService(output_root=self.tmpdir.name, runner=self.runner)
+
+    def wait_for_status(self, service, run_id, expected_status, timeout=2):
+        deadline = time.time() + timeout
+        last = None
+        while time.time() < deadline:
+            last = service.get_run(run_id)
+            if last["status"] == expected_status:
+                return last
+            time.sleep(0.01)
+        self.fail("run %s did not reach %s; last=%r" % (run_id, expected_status, last))
 
     def valid_payload(self):
         return {
@@ -58,11 +85,31 @@ class TestGameReverseWebService(unittest.TestCase):
 
         result = service.start_run(self.valid_payload())
 
-        self.assertEqual(result["status"], "completed")
         self.assertEqual(result["runner"], "game_reverse")
+        completed = self.wait_for_status(service, result["id"], "completed")
         self.assertEqual(len(self.runner.configs), 1)
         self.assertEqual(self.runner.configs[0].package_name, "com.example.game")
-        self.assertTrue(os.path.exists(os.path.join(result["session_dir"], "final_report.md")))
+        self.assertTrue(os.path.exists(os.path.join(completed["session_dir"], "final_report.md")))
+
+    def test_start_run_returns_before_slow_runner_finishes_and_records_events(self):
+        self.tmpdir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmpdir.cleanup)
+        runner = SlowFakeRunner()
+        service = GameReverseWebService(output_root=self.tmpdir.name, runner=runner)
+
+        result = service.start_run(self.valid_payload())
+
+        self.assertIn(result["status"], {"queued", "running"})
+        self.wait_for_status(service, result["id"], "running")
+        self.assertTrue(runner.started)
+        events = service.run_events(result["id"])
+        self.assertTrue(any(event["type"] == "run_started" for event in events))
+
+        runner.release.set()
+        self.wait_for_status(service, result["id"], "completed")
+        report = service.session_report(result["id"])
+
+        self.assertIn("# Slow Report", report["final_report"])
 
     def test_rejects_unknown_runner(self):
         service = self.make_service()
@@ -83,6 +130,7 @@ class TestGameReverseWebService(unittest.TestCase):
     def test_session_report_reads_final_report(self):
         service = self.make_service()
         result = service.start_run(self.valid_payload())
+        self.wait_for_status(service, result["id"], "completed")
 
         report = service.session_report(result["id"])
 

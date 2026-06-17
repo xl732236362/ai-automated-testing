@@ -32,6 +32,8 @@ def create_handler(service=None, web_root=None):
                     self._send_json(service.health())
                 elif path == "/api/config":
                     self._send_json(service.config())
+                elif path.startswith("/api/runs/") and path.endswith("/events"):
+                    self._handle_get_run_events(path)
                 elif path.startswith("/api/runs/"):
                     self._handle_get_run(path)
                 elif path == "/api/sessions":
@@ -72,6 +74,13 @@ def create_handler(service=None, web_root=None):
                 self._send_error(404, "not found")
                 return
             self._send_json(service.get_run(run_id))
+
+        def _handle_get_run_events(self, path):
+            run_id = unquote(path[len("/api/runs/") : -len("/events")])
+            if not run_id:
+                self._send_error(404, "not found")
+                return
+            self._send_json({"id": run_id, "events": service.run_events(run_id)})
 
         def _send_static(self, path):
             relative = unquote(path[len("/web/") :])

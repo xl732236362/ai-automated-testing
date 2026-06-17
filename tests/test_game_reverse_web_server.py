@@ -25,12 +25,21 @@ class FakeService:
         return {"id": "fake-run", "status": "completed", "session_dir": "fake-session"}
 
     def get_run(self, run_id):
+        if run_id != "fake-run":
+            raise KeyError(run_id)
         return {"id": run_id, "status": "completed"}
+
+    def run_events(self, run_id):
+        if run_id != "fake-run":
+            raise KeyError(run_id)
+        return [{"type": "run_started"}]
 
     def list_sessions(self):
         return [{"id": "fake-run", "session_dir": "fake-session"}]
 
     def session_report(self, run_id):
+        if run_id != "fake-run":
+            raise FileNotFoundError(run_id)
         return {"id": run_id, "final_report": "# Report\n"}
 
 
@@ -82,6 +91,27 @@ class TestGameReverseWebServer(unittest.TestCase):
 
         self.assertIn("App/Game", html)
         self.assertIn("app.js", html)
+
+    def test_run_events_endpoint_returns_json(self):
+        result = self.get_json("/api/runs/fake-run/events")
+
+        self.assertEqual(result["id"], "fake-run")
+        self.assertEqual(result["events"], [{"type": "run_started"}])
+
+    def test_session_report_endpoint_returns_json(self):
+        result = self.get_json("/api/sessions/fake-run/report")
+
+        self.assertEqual(result["id"], "fake-run")
+        self.assertEqual(result["final_report"], "# Report\n")
+
+    def test_missing_run_returns_json_error(self):
+        with self.assertRaises(HTTPError) as error:
+            urlopen(self.base_url + "/api/runs/missing-run", timeout=5)
+
+        body = error.exception.read().decode("utf-8")
+        result = json.loads(body)
+        self.assertEqual(error.exception.code, 404)
+        self.assertEqual(result, {"error": "not found"})
 
     def test_unknown_api_returns_404(self):
         with self.assertRaises(HTTPError) as error:
