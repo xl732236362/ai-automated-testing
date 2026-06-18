@@ -123,6 +123,49 @@ ABC123\tdevice product:test model:Pixel_7 device:panther
                 with self.assertRaises(TargetDiscoveryError):
                     validate_package_name(value)
 
+    def test_target_discovery_runs_fixed_adb_commands(self):
+        from game_reverse.target_discovery import TargetDiscovery
+
+        class FakeRunner:
+            def __init__(self):
+                self.calls = []
+
+            def run(self, args):
+                self.calls.append(args)
+                if args == ["devices"]:
+                    return "List of devices attached\nemulator-5554\tdevice\n"
+                if args[-2:] == ["activity", "activities"]:
+                    return (
+                        "topResumedActivity=ActivityRecord{67a175a u0 "
+                        "com.redlinegames.matchsniper3d/com.unity3d.player.UnityPlayerActivity t57}\n"
+                    )
+                if args[-4:] == ["pm", "list", "packages", "com.redlinegames.matchsniper3d"]:
+                    return "package:com.redlinegames.matchsniper3d\n"
+                if args[-4:] == [
+                    "package",
+                    "resolve-activity",
+                    "--brief",
+                    "com.redlinegames.matchsniper3d",
+                ]:
+                    return "com.redlinegames.matchsniper3d/com.unity3d.player.UnityPlayerActivity\n"
+                return ""
+
+        runner = FakeRunner()
+        discovery = TargetDiscovery(adb_runner=runner)
+
+        self.assertEqual(discovery.list_devices()[0]["id"], "emulator-5554")
+        self.assertEqual(
+            discovery.foreground_app("emulator-5554")["package_name"],
+            "com.redlinegames.matchsniper3d",
+        )
+        self.assertTrue(
+            discovery.package_validation(
+                "emulator-5554",
+                "com.redlinegames.matchsniper3d",
+            )["launchable"]
+        )
+        self.assertIn(["devices"], runner.calls)
+
 
 if __name__ == "__main__":
     unittest.main()
