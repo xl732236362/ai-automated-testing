@@ -8,7 +8,7 @@
     "targets": [],
     "success_criteria": []
   },
-  "model": "claude-opus-4-8",
+  "model": "gpt-5.5",
   "output_root": "game_reverse/outputs/sessions",
   "allowed_actions": ["screenshot", "wait", "back"],
   "recent_steps": 5,

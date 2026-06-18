@@ -48,6 +48,7 @@ class TestWebConsoleStatic(unittest.TestCase):
 
         self.assertEqual(data["config"]["device_uri"], "Android:///emulator-5554")
         self.assertEqual(data["config"]["package_name"], "com.example.game")
+        self.assertEqual(data["config"]["model"], "gpt-5.5")
         self.assertIn(
             data["config"]["mission"]["type"],
             ["free_explore", "feature_test", "level_design_reverse"],

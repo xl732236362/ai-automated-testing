@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from game_reverse.mission import Mission, parse_mission
 
 DEFAULT_ALLOWED_ACTIONS = ["screenshot", "wait", "back"]
+DEFAULT_MODEL = "gpt-5.5"
 
 
 @dataclass
@@ -15,7 +16,7 @@ class GameReverseConfig:
     package_name: str = None
     max_steps: int = 50
     mission: Mission = field(default_factory=Mission)
-    model: str = "claude-opus-4-8"
+    model: str = DEFAULT_MODEL
     output_root: str = "game_reverse/outputs/sessions"
     allowed_actions: list = field(default_factory=lambda: list(DEFAULT_ALLOWED_ACTIONS))
     recent_steps: int = 5
@@ -40,7 +41,7 @@ def load_config(path):
         package_name=package_name,
         max_steps=max_steps,
         mission=parse_mission(raw.get("mission")),
-        model=raw.get("model", "claude-opus-4-8"),
+        model=raw.get("model", DEFAULT_MODEL),
         output_root=raw.get("output_root", "game_reverse/outputs/sessions"),
         allowed_actions=list(raw.get("allowed_actions", DEFAULT_ALLOWED_ACTIONS)),
         recent_steps=raw.get("recent_steps", 5),

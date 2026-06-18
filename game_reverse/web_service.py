@@ -5,7 +5,7 @@ import os
 import threading
 import time
 
-from game_reverse.config import DEFAULT_ALLOWED_ACTIONS, GameReverseConfig
+from game_reverse.config import DEFAULT_ALLOWED_ACTIONS, DEFAULT_MODEL, GameReverseConfig
 from game_reverse.executors import ExecutorError, ExecutorRunContext, create_default_registry
 from game_reverse.mission import parse_mission
 from game_reverse.run_loop import run_loop
@@ -151,7 +151,7 @@ class GameReverseWebService:
             package_name=package_name,
             max_steps=max_steps,
             mission=parse_mission(payload.get("mission")),
-            model=payload.get("model", "claude-opus-4-8"),
+            model=payload.get("model", DEFAULT_MODEL),
             output_root=payload.get("output_root", self.output_root),
             allowed_actions=allowed_actions,
             recent_steps=payload.get("recent_steps", 5),

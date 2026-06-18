@@ -41,7 +41,7 @@ class TestGameReverseConfig(unittest.TestCase):
         self.assertEqual(config.mission.goal, "Verify inventory feature")
         self.assertEqual(config.mission.targets, ["inventory entry"])
         self.assertEqual(config.mission.success_criteria, ["inventory opens"])
-        self.assertEqual(config.model, "claude-opus-4-8")
+        self.assertEqual(config.model, "gpt-5.5")
         self.assertEqual(config.output_root, "game_reverse/outputs/sessions")
         self.assertEqual(config.allowed_actions, DEFAULT_ALLOWED_ACTIONS)
         self.assertIsNot(config.allowed_actions, DEFAULT_ALLOWED_ACTIONS)
