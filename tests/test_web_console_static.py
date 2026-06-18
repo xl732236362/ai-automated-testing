@@ -38,6 +38,9 @@ class TestWebConsoleStatic(unittest.TestCase):
         self.assertIn('id="model-input"', html)
         self.assertIn('id="max-steps-input"', html)
         self.assertIn('id="mission-goal"', html)
+        self.assertIn('id="allow-unsafe-actions-input"', html)
+        self.assertIn("交互权限", html)
+        self.assertIn("允许点击/滑动", html)
         self.assertIn("App/Game 探索控制台", html)
 
     def test_sample_run_json_has_required_shape(self):
@@ -55,6 +58,11 @@ class TestWebConsoleStatic(unittest.TestCase):
         self.assertIn("session_dir", data["run"]["outputs"])
         self.assertIn("final_report", data["run"]["outputs"])
         self.assertEqual(data["config"]["allowed_actions"], ["screenshot", "wait", "back"])
+        self.assertNotIn("tap", data["config"]["allowed_actions"])
+        self.assertNotIn("swipe", data["config"]["allowed_actions"])
+        step_actions = [step["action"]["type"] for step in data["run"]["steps"]]
+        self.assertNotIn("tap", step_actions)
+        self.assertNotIn("swipe", step_actions)
 
     def test_app_declares_static_only_boundary(self):
         script = (WEB_DIR / "app.js").read_text(encoding="utf-8")
@@ -66,7 +74,12 @@ class TestWebConsoleStatic(unittest.TestCase):
         self.assertIn("/api/runs/", script)
         self.assertIn("runner: selectedRunnerId", script)
         self.assertIn("renderRunners", script)
-        self.assertIn("enable_unsafe_actions: false", script)
+        self.assertIn("getUnsafeActionsEnabled", script)
+        self.assertIn("getEffectiveAllowedActions", script)
+        self.assertIn("wireUnsafeActionToggle", script)
+        self.assertRegex(script, r"enable_unsafe_actions:\s*getUnsafeActionsEnabled\(\)")
+        self.assertIn('const UNSAFE_ACTIONS = ["tap", "swipe"];', script)
+        self.assertNotIn("enable_unsafe_actions: true", script)
         self.assertNotIn("child_process", script)
         self.assertNotIn("codex exec", script)
         self.assertNotIn("claude -p", script)
@@ -77,6 +90,9 @@ class TestWebConsoleStatic(unittest.TestCase):
 
         self.assertIn("任务配置", html)
         self.assertIn("执行器选择", html)
+        self.assertIn("交互权限", html)
+        self.assertIn("允许点击/滑动", html)
+        self.assertIn("真实点击或滑动", html)
         self.assertIn("开始运行", html)
         self.assertIn("后端在线", script)
         self.assertIn("运行完成", script)
