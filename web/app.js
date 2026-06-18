@@ -297,17 +297,57 @@ function useForegroundApp() {
   return fetch(`${API_BASE}/api/devices/${encodeURIComponent(deviceId)}/foreground`)
     .then((response) => readJsonOrThrow(response, "读取前台应用失败"))
     .then((data) => {
-      setInputValue("package-name-input", data.package_name || "");
-      setTargetConfigStatus(
-        `当前前台应用 ${data.package_name}/${data.activity || ""}`,
-        "ok"
-      );
+      handleForegroundAppDetection(data);
       return data;
     })
     .catch((error) => {
       setTargetConfigStatus(error.message, "error");
       return null;
     });
+}
+
+function handleForegroundAppDetection(data) {
+  const detectedPackage = data.package_name || "";
+  const currentPackage = readInputValue("package-name-input", "");
+  const foregroundContext = formatForegroundAppContext(data);
+
+  if (!detectedPackage) {
+    setTargetConfigStatus("未识别到前台应用包名", "warning");
+    return;
+  }
+
+  if (isSystemPackageName(detectedPackage)) {
+    setTargetConfigStatus(`检测到系统前台应用，请手动确认包名。${foregroundContext}`, "warning");
+    return;
+  }
+
+  if (currentPackage && currentPackage !== detectedPackage) {
+    setTargetConfigStatus(
+      `当前前台应用与包名不一致，请确认后再开始。${foregroundContext}`,
+      "warning"
+    );
+    return;
+  }
+
+  if (!currentPackage) {
+    setInputValue("package-name-input", detectedPackage);
+  }
+  setTargetConfigStatus(`当前前台应用 ${foregroundContext}`, "ok");
+}
+
+function isSystemPackageName(packageName) {
+  return (
+    packageName === "android" ||
+    packageName === "com.android.systemui" ||
+    packageName.startsWith("com.google.android.") ||
+    packageName.startsWith("com.miui.")
+  );
+}
+
+function formatForegroundAppContext(data) {
+  const packageName = data.package_name || "";
+  const activity = data.activity || "";
+  return activity ? `${packageName}/${activity}` : packageName;
 }
 
 function validateTargetConfig() {

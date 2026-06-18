@@ -98,6 +98,19 @@ class TestWebConsoleStatic(unittest.TestCase):
         self.assertNotIn("codex exec", script)
         self.assertNotIn("claude -p", script)
 
+    def test_foreground_app_detection_requires_conservative_package_handling(self):
+        script = (WEB_DIR / "app.js").read_text(encoding="utf-8")
+
+        self.assertIn("handleForegroundAppDetection", script)
+        self.assertIn("isSystemPackageName", script)
+        self.assertIn("当前前台应用与包名不一致，请确认后再开始。", script)
+        self.assertIn('"android"', script)
+        self.assertIn('"com.android.systemui"', script)
+        self.assertIn('"com.google.android."', script)
+        self.assertIn('"com.miui."', script)
+        self.assertIn('readInputValue("package-name-input", "")', script)
+        self.assertNotIn('setInputValue("package-name-input", data.package_name || "");', script)
+
     def test_touched_web_files_use_readable_chinese(self):
         html = (WEB_DIR / "index.html").read_text(encoding="utf-8")
         script = (WEB_DIR / "app.js").read_text(encoding="utf-8")

@@ -26,6 +26,7 @@ FOREGROUND_PATTERNS = [
     re.compile(r"mCurrentFocus=.*?\s([A-Za-z0-9_.$]+)/([A-Za-z0-9_.$]+)"),
     re.compile(r"mFocusedApp=.*?\s([A-Za-z0-9_.$]+)/([A-Za-z0-9_.$]+)"),
 ]
+ADB_ERROR_OUTPUT_LIMIT = 400
 
 
 class TargetDiscoveryError(ValueError):
@@ -54,6 +55,14 @@ class AdbRunner:
             raise TargetDiscoveryError("adb command failed: %s" % exc) from exc
         except subprocess.TimeoutExpired as exc:
             raise TargetDiscoveryError("adb command timed out") from exc
+        if completed.returncode != 0:
+            raise TargetDiscoveryError(
+                "adb command failed with exit code %s: %s"
+                % (
+                    completed.returncode,
+                    _bounded_output((completed.stderr or "") + (completed.stdout or "")),
+                )
+            )
         return (completed.stdout or "") + (completed.stderr or "")
 
 
@@ -146,7 +155,10 @@ def parse_foreground_app(output, source):
 
 
 def parse_package_validation(device_id, package_name, package_output, resolve_output):
-    installed = ("package:%s" % package_name) in package_output
+    installed = any(
+        line.strip() == "package:%s" % package_name
+        for line in package_output.splitlines()
+    )
     activity = _parse_resolved_activity(package_name, resolve_output)
     warnings = []
     if not installed:
@@ -184,3 +196,12 @@ def _parse_resolved_activity(package_name, output):
         if line.startswith(prefix):
             return line[len(prefix) :]
     return ""
+
+
+def _bounded_output(output):
+    clean_output = " ".join(output.split())
+    if not clean_output:
+        return "no adb output"
+    if len(clean_output) <= ADB_ERROR_OUTPUT_LIMIT:
+        return clean_output
+    return clean_output[:ADB_ERROR_OUTPUT_LIMIT] + "... (truncated)"

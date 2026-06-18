@@ -2,8 +2,10 @@
 """Tests for read-only Android target discovery."""
 
 import unittest
+from unittest import mock
 
 from game_reverse.target_discovery import (
+    AdbRunner,
     TargetDiscoveryError,
     parse_adb_devices,
     parse_foreground_app,
@@ -14,6 +16,21 @@ from game_reverse.target_discovery import (
 
 
 class TestTargetDiscoveryParsing(unittest.TestCase):
+    def test_adb_runner_raises_bounded_error_for_non_zero_exit(self):
+        long_stdout = "stdout line\n" + ("x" * 2000)
+        long_stderr = "permission denied\n" + ("y" * 2000)
+        completed = mock.Mock(returncode=1, stdout=long_stdout, stderr=long_stderr)
+
+        with mock.patch("game_reverse.target_discovery.subprocess.run", return_value=completed):
+            with self.assertRaises(TargetDiscoveryError) as context:
+                AdbRunner(adb_path="adb", timeout=3).run(["devices"])
+
+        message = str(context.exception)
+        self.assertIn("adb command failed with exit code 1", message)
+        self.assertIn("permission denied", message)
+        self.assertLessEqual(len(message), 600)
+        self.assertNotIn("y" * 1000, message)
+
     def test_parse_adb_devices_returns_only_online_devices(self):
         output = """List of devices attached
 emulator-5554\tdevice
@@ -109,6 +126,17 @@ ABC123\tdevice product:test model:Pixel_7 device:panther
 
         self.assertFalse(result["installed"])
         self.assertFalse(result["launchable"])
+        self.assertEqual(result["warnings"], ["包名未安装"])
+
+    def test_parse_package_validation_requires_exact_installed_package_line(self):
+        result = parse_package_validation(
+            "emulator-5554",
+            "com.example.game",
+            package_output="package:com.example.game.beta\n",
+            resolve_output="No activity found\n",
+        )
+
+        self.assertFalse(result["installed"])
         self.assertEqual(result["warnings"], ["包名未安装"])
 
     def test_validate_device_id_rejects_shell_fragments(self):
