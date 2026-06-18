@@ -90,6 +90,7 @@ class TestWebConsoleStatic(unittest.TestCase):
         self.assertIn("detectDevices", script)
         self.assertIn("useForegroundApp", script)
         self.assertIn("validateTargetConfig", script)
+        self.assertIn("请手动填写设备地址", script)
         self.assertRegex(script, r"enable_unsafe_actions:\s*getUnsafeActionsEnabled\(\)")
         self.assertIn('const UNSAFE_ACTIONS = ["tap", "swipe"];', script)
         self.assertNotIn("enable_unsafe_actions: true", script)

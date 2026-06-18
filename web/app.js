@@ -268,14 +268,14 @@ function detectDevices() {
       }
 
       const firstDevice = devices[0];
-      setInputValue("device-uri-input", firstDevice.uri || `Android:///${firstDevice.id}`);
       if (devices.length === 1) {
+        setInputValue("device-uri-input", firstDevice.uri || `Android:///${firstDevice.id}`);
         setTargetConfigStatus(`已连接 ${firstDevice.id}`, "ok");
         return devices;
       }
 
       setTargetConfigStatus(
-        `检测到 ${devices.length} 个设备，已选择 ${firstDevice.id}`,
+        `检测到 ${devices.length} 个设备，请手动填写设备地址。`,
         "warning"
       );
       return devices;
