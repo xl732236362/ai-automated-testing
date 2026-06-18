@@ -111,6 +111,20 @@ class TestWebConsoleStatic(unittest.TestCase):
         self.assertIn('readInputValue("package-name-input", "")', script)
         self.assertNotIn('setInputValue("package-name-input", data.package_name || "");', script)
 
+    def test_app_renders_step_progress_events(self):
+        script = (WEB_DIR / "app.js").read_text(encoding="utf-8")
+
+        self.assertIn("session_started", script)
+        self.assertIn("step_screenshot", script)
+        self.assertIn("step_action", script)
+        self.assertIn("step_failed", script)
+        self.assertIn("run_progress", script)
+        self.assertIn("会话已创建", script)
+        self.assertIn("运行进度", script)
+        self.assertIn("formatEventDetail", script)
+        self.assertIn("event.step", script)
+        self.assertIn("event.max_steps", script)
+
     def test_touched_web_files_use_readable_chinese(self):
         html = (WEB_DIR / "index.html").read_text(encoding="utf-8")
         script = (WEB_DIR / "app.js").read_text(encoding="utf-8")

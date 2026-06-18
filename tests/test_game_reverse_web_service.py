@@ -108,6 +108,33 @@ class RecordingExecutor:
         return context.run_dir
 
 
+class ProgressExecutor(RecordingExecutor):
+    id = "progress"
+    name = "Progress"
+    description = "Emits session progress and waits before completing."
+
+    def __init__(self):
+        super().__init__()
+        self.release = threading.Event()
+
+    def start(self, config, payload, context=None):
+        self.contexts.append(context)
+        os.makedirs(context.run_dir, exist_ok=True)
+        context.emit_event("session_started", session_dir=context.run_dir)
+        context.emit_event(
+            "run_progress",
+            step=1,
+            max_steps=payload.get("max_steps", 1),
+            action_type="wait",
+            message="第 1 步 / 共 1 步：wait",
+        )
+        self.release.wait(timeout=5)
+        report_path = os.path.join(context.run_dir, "final_report.md")
+        with open(report_path, "w", encoding="utf-8") as report:
+            report.write("# Progress Report\n")
+        return context.run_dir
+
+
 class FakeServiceProcess:
     def __init__(self, stdout_lines=None, stderr_lines=None, returncode=0):
         self.stdin = FakeServiceStdin()
@@ -156,6 +183,16 @@ class TestGameReverseWebService(unittest.TestCase):
                 return last
             time.sleep(0.01)
         self.fail("run %s did not reach %s; last=%r" % (run_id, expected_status, last))
+
+    def wait_for_event(self, service, run_id, event_type, timeout=2):
+        deadline = time.time() + timeout
+        events = []
+        while time.time() < deadline:
+            events = service.run_events(run_id)
+            if any(event["type"] == event_type for event in events):
+                return events
+            time.sleep(0.01)
+        self.fail("run %s did not emit %s; events=%r" % (run_id, event_type, events))
 
     def valid_payload(self):
         return {
@@ -303,6 +340,30 @@ class TestGameReverseWebService(unittest.TestCase):
         self.assertTrue(any(event["type"] == "runner_event" for event in events))
         report = service.session_report(result["id"])
         self.assertIn("# Recording Report", report["final_report"])
+
+    def test_records_session_dir_and_progress_while_run_is_active(self):
+        self.tmpdir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmpdir.cleanup)
+        executor = ProgressExecutor()
+        service = GameReverseWebService(
+            output_root=self.tmpdir.name,
+            runner=FakeRunner(),
+            executors=ExecutorRegistry([executor]),
+        )
+        payload = self.valid_payload()
+        payload["runner"] = "progress"
+
+        result = service.start_run(payload)
+        running = self.wait_for_status(service, result["id"], "running")
+
+        self.assertEqual(running["session_dir"], executor.contexts[0].run_dir)
+        self.wait_for_event(service, result["id"], "session_started")
+        events = self.wait_for_event(service, result["id"], "run_progress")
+        self.assertTrue(any(event["type"] == "session_started" for event in events))
+        self.assertTrue(any(event["type"] == "run_progress" for event in events))
+
+        executor.release.set()
+        self.wait_for_status(service, result["id"], "completed")
 
     def test_web_service_runs_enabled_codex_executor_with_fake_process(self):
         self.tmpdir = tempfile.TemporaryDirectory()

@@ -143,12 +143,12 @@ class TestExecutorRegistry(unittest.TestCase):
     def test_game_reverse_executor_delegates_to_runner_with_optional_context(self):
         calls = []
 
-        def fake_runner(config):
-            calls.append(config)
+        def fake_runner(config, context=None, session_name=None):
+            calls.append((config, context, session_name))
             return "session-dir"
 
         executor = GameReverseExecutor(fake_runner)
-        context = object()
+        context = make_context("run-123", os.path.join(os.getcwd(), "run-123"), [])
 
         result = executor.start(
             config={"package_name": "com.example.game"},
@@ -157,7 +157,30 @@ class TestExecutorRegistry(unittest.TestCase):
         )
 
         self.assertEqual(result, "session-dir")
+        self.assertEqual(calls, [({"package_name": "com.example.game"}, context, "run-123")])
+
+    def test_game_reverse_executor_keeps_legacy_runner_compatibility(self):
+        calls = []
+
+        def fake_runner(config):
+            calls.append(config)
+            return "legacy-session"
+
+        executor = GameReverseExecutor(fake_runner)
+
+        result = executor.start({"package_name": "com.example.game"}, payload={}, context=object())
+
+        self.assertEqual(result, "legacy-session")
         self.assertEqual(calls, [{"package_name": "com.example.game"}])
+
+    def test_game_reverse_executor_does_not_swallow_runner_type_errors(self):
+        def fake_runner(config, context=None):
+            raise TypeError("context object is invalid inside runner")
+
+        executor = GameReverseExecutor(fake_runner)
+
+        with self.assertRaisesRegex(TypeError, "invalid inside runner"):
+            executor.start({"package_name": "com.example.game"}, payload={}, context=object())
 
 
 class TestExecutorCommandBuilders(unittest.TestCase):

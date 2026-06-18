@@ -669,12 +669,24 @@ function renderEvents(events) {
       const type = document.createElement("strong");
       type.textContent = eventTypeLabel(event.type);
       const detail = document.createElement("span");
-      detail.textContent = event.message || event.error || event.session_dir || event.created_at || "";
+      detail.textContent = formatEventDetail(event);
 
       item.append(type, detail);
       return item;
     })
   );
+}
+
+function formatEventDetail(event) {
+  if (event.message) {
+    return event.message;
+  }
+  if (event.step && event.max_steps) {
+    const action = event.action_type ? `：${event.action_type}` : "";
+    const result = event.result ? `，${event.result}` : "";
+    return `第 ${event.step} 步 / 共 ${event.max_steps} 步${action}${result}`;
+  }
+  return event.error || event.session_dir || event.created_at || "";
 }
 
 function renderSessions(sessions) {
@@ -740,6 +752,13 @@ function eventTypeLabel(type) {
   const labels = {
     run_queued: "已排队",
     run_started: "已启动",
+    session_prepared: "会话已准备",
+    session_started: "会话已创建",
+    step_screenshot: "第 N 步截图",
+    step_action: "第 N 步动作",
+    step_failed: "第 N 步失败",
+    run_progress: "运行进度",
+    run_report_written: "报告已写入",
     run_completed: "已完成",
     run_failed: "已失败",
     runner_process_started: "进程启动",

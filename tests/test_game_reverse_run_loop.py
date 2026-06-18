@@ -48,6 +48,16 @@ class FakeDecider:
         }
 
 
+class FakeContext:
+    def __init__(self):
+        self.events = []
+
+    def emit_event(self, event_type, **extra):
+        event = {"type": event_type}
+        event.update(extra)
+        self.events.append(event)
+
+
 class TestRunLoop(unittest.TestCase):
     def test_runs_fixed_number_of_steps_with_mission(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -78,6 +88,38 @@ class TestRunLoop(unittest.TestCase):
                 report = report_file.read()
 
         self.assertIn("功能测试阶段报告", report)
+
+    def test_emits_session_and_step_progress_events(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config = GameReverseConfig(
+                device_uri="Android:///",
+                package_name="com.example.game",
+                max_steps=1,
+                output_root=tmpdir,
+                allowed_actions=["screenshot", "wait"],
+                mission=Mission(type="free_explore", goal="探索任务", targets=["玩法"]),
+            )
+            context = FakeContext()
+
+            session_dir = run_loop(
+                config,
+                executor=FakeExecutor(),
+                decider=FakeDecider(),
+                session_name="progress-session",
+                context=context,
+            )
+
+        event_types = [event["type"] for event in context.events]
+        self.assertIn("session_started", event_types)
+        self.assertIn("step_screenshot", event_types)
+        self.assertIn("step_action", event_types)
+        self.assertIn("run_progress", event_types)
+        self.assertIn("run_report_written", event_types)
+        self.assertEqual(context.events[0]["session_dir"], session_dir)
+        progress = [event for event in context.events if event["type"] == "run_progress"][0]
+        self.assertEqual(progress["step"], 1)
+        self.assertEqual(progress["max_steps"], 1)
+        self.assertEqual(progress["action_type"], "wait")
 
 
 if __name__ == "__main__":

@@ -195,6 +195,9 @@ class GameReverseWebService:
 
         def emit_event(event_type, **extra):
             with self.lock:
+                record = self.runs[run_id]
+                if event_type == "session_started" and extra.get("session_dir"):
+                    record["session_dir"] = extra["session_dir"]
                 self._append_event_locked(run_id, event_type, **extra)
 
         context = ExecutorRunContext(
@@ -202,6 +205,9 @@ class GameReverseWebService:
             run_dir=run_dir,
             emit_event=emit_event,
         )
+        with self.lock:
+            record["session_dir"] = run_dir
+            self._append_event_locked(run_id, "session_prepared", session_dir=run_dir)
 
         try:
             session_dir = executor.start(config, payload, context=context)

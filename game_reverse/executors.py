@@ -6,6 +6,7 @@ import os
 import shutil
 import subprocess
 import threading
+import inspect
 from dataclasses import dataclass, field
 
 
@@ -51,7 +52,16 @@ class GameReverseExecutor:
         }
 
     def start(self, config, payload, context=None):
-        return self.runner(config)
+        if context is None:
+            return self.runner(config)
+
+        kwargs = {}
+        runner_signature = inspect.signature(self.runner)
+        if "context" in runner_signature.parameters:
+            kwargs["context"] = context
+        if "session_name" in runner_signature.parameters and getattr(context, "run_id", None):
+            kwargs["session_name"] = context.run_id
+        return self.runner(config, **kwargs)
 
 
 @dataclass
