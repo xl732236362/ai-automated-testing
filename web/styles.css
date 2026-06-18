@@ -28,6 +28,7 @@ body {
 }
 
 button,
+input,
 textarea {
   font: inherit;
 }
@@ -231,6 +232,7 @@ h3 {
 }
 
 .form-grid,
+.edit-grid,
 .runner-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -265,6 +267,35 @@ label {
   font-size: 14px;
 }
 
+.edit-grid label {
+  min-width: 0;
+  margin: 0;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-soft);
+}
+
+input,
+textarea {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--text);
+}
+
+input {
+  min-height: 34px;
+  padding: 7px 9px;
+}
+
+input:focus,
+textarea:focus {
+  border-color: var(--accent);
+  outline: 2px solid rgba(35, 100, 170, 0.14);
+}
+
 .mission-card {
   display: grid;
   grid-template-columns: minmax(0, 1.2fr) minmax(260px, 0.8fr);
@@ -273,14 +304,9 @@ label {
 }
 
 textarea {
-  width: 100%;
   min-height: 112px;
   resize: vertical;
-  border: 1px solid var(--line);
-  border-radius: 8px;
   padding: 10px;
-  background: var(--surface-soft);
-  color: var(--text);
   line-height: 1.55;
 }
 
@@ -302,6 +328,27 @@ li {
 
 .runner-card {
   padding: 11px;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 120ms ease, box-shadow 120ms ease, transform 120ms ease;
+}
+
+.runner-card:hover:not(:disabled) {
+  border-color: var(--accent);
+  box-shadow: 0 8px 18px rgba(35, 100, 170, 0.12);
+  transform: translateY(-1px);
+}
+
+.runner-card.is-selected {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+  background: #f2f7fc;
+}
+
+.runner-card.is-disabled {
+  cursor: not-allowed;
+  opacity: 0.64;
 }
 
 .runner-card header {
@@ -425,7 +472,7 @@ li {
   min-height: 34px;
   border-radius: 7px;
   padding: 0 12px;
-  cursor: default;
+  cursor: pointer;
   font-weight: 700;
 }
 
@@ -439,6 +486,12 @@ li {
   border: 1px solid var(--line);
   background: var(--surface-soft);
   color: var(--muted);
+}
+
+.primary-button:disabled,
+.ghost-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
 }
 
 .phone-preview {
@@ -613,6 +666,7 @@ li {
   }
 
   .form-grid,
+  .edit-grid,
   .runner-grid,
   .mission-card {
     grid-template-columns: 1fr;

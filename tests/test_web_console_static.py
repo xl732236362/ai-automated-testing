@@ -33,6 +33,11 @@ class TestWebConsoleStatic(unittest.TestCase):
         self.assertIn('data-sample-url="data/sample-run.json"', html)
         self.assertIn('id="event-log"', html)
         self.assertIn('id="session-list"', html)
+        self.assertIn('id="device-uri-input"', html)
+        self.assertIn('id="package-name-input"', html)
+        self.assertIn('id="model-input"', html)
+        self.assertIn('id="max-steps-input"', html)
+        self.assertIn('id="mission-goal"', html)
         self.assertIn("App/Game 探索控制台", html)
 
     def test_sample_run_json_has_required_shape(self):
@@ -55,13 +60,26 @@ class TestWebConsoleStatic(unittest.TestCase):
         script = (WEB_DIR / "app.js").read_text(encoding="utf-8")
 
         self.assertIn("STATIC_ONLY", script)
+        self.assertIn("selectedRunnerId", script)
         self.assertIn("fetch(sampleUrl)", script)
         self.assertIn("pollRun", script)
         self.assertIn("/api/runs/", script)
+        self.assertIn("runner: selectedRunnerId", script)
+        self.assertIn("renderRunners", script)
         self.assertIn("enable_unsafe_actions: false", script)
         self.assertNotIn("child_process", script)
         self.assertNotIn("codex exec", script)
         self.assertNotIn("claude -p", script)
+
+    def test_touched_web_files_use_readable_chinese(self):
+        html = (WEB_DIR / "index.html").read_text(encoding="utf-8")
+        script = (WEB_DIR / "app.js").read_text(encoding="utf-8")
+
+        self.assertIn("任务配置", html)
+        self.assertIn("执行器选择", html)
+        self.assertIn("开始运行", html)
+        self.assertIn("后端在线", script)
+        self.assertIn("运行完成", script)
 
 
 if __name__ == "__main__":

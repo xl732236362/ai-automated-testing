@@ -19,15 +19,14 @@
       </div>
       <nav class="nav-list">
         <a class="nav-item is-active" href="#mission">运行任务</a>
-        <a class="nav-item" href="#device">设备配置</a>
-        <a class="nav-item" href="#presets">任务模板</a>
-        <a class="nav-item" href="#sessions">历史会话</a>
+        <a class="nav-item" href="#runner">执行器</a>
+        <a class="nav-item" href="#safety">安全限制</a>
+        <a class="nav-item" href="#timeline">事件时间线</a>
         <a class="nav-item" href="#reports">报告中心</a>
-        <a class="nav-item" href="#settings">模型设置</a>
       </nav>
       <section class="sidebar-note">
-        <span class="note-label">静态预览</span>
-        <p>第一阶段不会启动 Codex、ClaudeCode、Airtest 或 ADB。</p>
+        <span class="note-label">本地控制</span>
+        <p>页面只调用本地后端 API，不接收命令行片段，也不会在浏览器中保存密钥。</p>
       </section>
     </aside>
 
@@ -49,14 +48,31 @@
             <p class="eyebrow">Mission</p>
             <h2>任务配置</h2>
           </div>
-          <button class="ghost-button" type="button">导入配置</button>
+          <span class="planned-badge">安全动作默认</span>
         </div>
-        <div class="form-grid" id="config-grid"></div>
+        <div class="edit-grid" id="config-grid">
+          <label>
+            设备地址
+            <input id="device-uri-input" type="text" autocomplete="off">
+          </label>
+          <label>
+            应用包名
+            <input id="package-name-input" type="text" autocomplete="off">
+          </label>
+          <label>
+            模型
+            <input id="model-input" type="text" autocomplete="off">
+          </label>
+          <label>
+            最大步数
+            <input id="max-steps-input" type="number" min="1" max="999">
+          </label>
+        </div>
 
         <div class="mission-card">
           <div>
             <label for="mission-goal">任务目标</label>
-            <textarea id="mission-goal" readonly></textarea>
+            <textarea id="mission-goal"></textarea>
           </div>
           <div class="mission-lists">
             <div>
@@ -71,18 +87,18 @@
         </div>
       </section>
 
-      <section class="panel">
+      <section id="runner" class="panel">
         <div class="panel-header">
           <div>
             <p class="eyebrow">Runner</p>
             <h2>执行器选择</h2>
           </div>
-          <span class="planned-badge">后端接入规划</span>
+          <span class="planned-badge">来自 /api/health</span>
         </div>
         <div class="runner-grid" id="runner-grid"></div>
       </section>
 
-      <section class="panel">
+      <section id="safety" class="panel">
         <div class="panel-header">
           <div>
             <p class="eyebrow">Safety</p>
@@ -90,18 +106,18 @@
           </div>
         </div>
         <div class="actions-row" id="allowed-actions"></div>
-        <p class="safety-copy">遇到登录、实名、支付、权限授权、账号密码输入等敏感页面时，后端阶段必须限制为等待或返回。</p>
+        <p class="safety-copy">当前页面只提交截图、等待、返回这类安全动作。点击和滑动仍需后端显式开启。</p>
       </section>
 
-      <section class="panel">
+      <section id="timeline" class="panel">
         <div class="panel-header">
           <div>
             <p class="eyebrow">Timeline</p>
-            <h2>实时决策时间线</h2>
+            <h2>运行事件</h2>
           </div>
           <button class="primary-button" id="start-run-button" type="button">开始运行</button>
         </div>
-        <div class="timeline" id="timeline"></div>
+        <div class="timeline" id="timeline-list"></div>
         <div class="event-log" id="event-log"></div>
       </section>
     </section>
@@ -116,7 +132,7 @@
         </div>
         <div class="phone-preview">
           <div class="crosshair"></div>
-          <span>静态截图占位</span>
+          <span>截图占位</span>
         </div>
       </section>
 

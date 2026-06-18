@@ -1,7 +1,9 @@
 const STATIC_ONLY = false;
 const API_BASE = "";
+
 let currentData = null;
 let backendOnline = false;
+let selectedRunnerId = "game_reverse";
 let pollTimer = null;
 
 const ACTION_LABELS = {
@@ -13,29 +15,36 @@ const ACTION_LABELS = {
   error: "错误",
 };
 
-const FIELD_LABELS = [
-  ["device_uri", "设备地址"],
-  ["package_name", "应用包名"],
-  ["model", "模型"],
-  ["max_steps", "最大步数"],
-  ["recent_steps", "上下文步数"],
-  ["consecutive_failure_limit", "失败阈值"],
-  ["output_root", "输出目录"],
-];
-
 document.addEventListener("DOMContentLoaded", () => {
   const root = document.getElementById("app");
   const sampleUrl = root.dataset.sampleUrl;
 
   wireStartButton();
   Promise.all([loadSample(sampleUrl), detectBackend()])
-    .then(([sample]) => {
-      currentData = sample;
-      renderConsole(sample);
+    .then(([sample, health]) => {
+      currentData = mergeBackendHealth(sample, health);
+      selectedRunnerId = chooseInitialRunner(currentData.runners);
+      renderConsole(currentData);
       updateBackendStatus();
     })
     .catch(renderLoadError);
 });
+
+function mergeBackendHealth(sample, health) {
+  if (!health || !Array.isArray(health.runners)) {
+    return sample;
+  }
+  return {...sample, runners: health.runners};
+}
+
+function chooseInitialRunner(runners) {
+  const gameReverse = runners.find((runner) => runner.id === "game_reverse" && isRunnerAvailable(runner));
+  if (gameReverse) {
+    return gameReverse.id;
+  }
+  const firstAvailable = runners.find(isRunnerAvailable);
+  return firstAvailable ? firstAvailable.id : "";
+}
 
 function renderConsole(data) {
   renderRunState(data.run);
@@ -58,39 +67,48 @@ function renderRunState(run) {
 }
 
 function renderConfig(config) {
-  const grid = document.getElementById("config-grid");
-  grid.replaceChildren(
-    ...FIELD_LABELS.map(([key, label]) => createField(label, String(config[key] ?? "-"))),
-    createField("任务类型", missionTypeLabel(config.mission.type))
-  );
+  setInputValue("device-uri-input", config.device_uri || "Android:///");
+  setInputValue("package-name-input", config.package_name || "");
+  setInputValue("model-input", config.model || "");
+  setInputValue("max-steps-input", config.max_steps || 50);
 }
 
 function renderMission(mission) {
-  document.getElementById("mission-goal").value = mission.goal;
-  renderList("mission-targets", mission.targets, "未设置目标对象");
-  renderList("mission-success", mission.success_criteria, "未设置成功标准");
+  document.getElementById("mission-goal").value = mission.goal || "";
+  renderList("mission-targets", mission.targets || [], "未设置目标对象");
+  renderList("mission-success", mission.success_criteria || [], "未设置成功标准");
 }
 
 function renderRunners(runners) {
   const grid = document.getElementById("runner-grid");
   grid.replaceChildren(
     ...runners.map((runner) => {
-      const card = document.createElement("article");
-      card.className = "runner-card";
+      const available = isRunnerAvailable(runner);
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "runner-card";
+      button.disabled = !available;
+      button.classList.toggle("is-selected", runner.id === selectedRunnerId);
+      button.classList.toggle("is-disabled", !available);
+      button.addEventListener("click", () => {
+        selectedRunnerId = runner.id;
+        renderRunners(currentData.runners);
+        markStaticControls();
+      });
 
       const header = document.createElement("header");
       const name = document.createElement("strong");
-      name.textContent = runner.name;
+      name.textContent = runner.name || runner.id;
       const status = document.createElement("span");
-      status.className = runner.status === "计划接入" ? "runner-status is-planned" : "runner-status";
-      status.textContent = runner.status;
+      status.className = available ? "runner-status" : "runner-status is-planned";
+      status.textContent = runnerStatusLabel(runner, available);
       header.append(name, status);
 
       const description = document.createElement("p");
-      description.textContent = runner.description;
+      description.textContent = runner.description || "";
 
-      card.append(header, description);
-      return card;
+      button.append(header, description);
+      return button;
     })
   );
 }
@@ -102,14 +120,14 @@ function renderAllowedActions(actions) {
       const chip = document.createElement("span");
       chip.className = ["tap", "swipe"].includes(action) ? "action-chip is-risky" : "action-chip";
       chip.textContent = ACTION_LABELS[action] || action;
-      chip.title = ["tap", "swipe"].includes(action) ? "后端阶段需要显式启用" : "默认安全动作";
+      chip.title = ["tap", "swipe"].includes(action) ? "需要后端显式启用" : "默认安全动作";
       return chip;
     })
   );
 }
 
 function renderTimeline(steps) {
-  const timeline = document.getElementById("timeline");
+  const timeline = document.getElementById("timeline-list");
   timeline.replaceChildren(
     ...steps.map((step) => {
       const item = document.createElement("article");
@@ -143,7 +161,7 @@ function renderRisks(steps) {
   const risks = steps.flatMap((step) => step.risks || []);
 
   if (risks.length === 0) {
-    riskList.replaceChildren(createListItem("当前样例没有风险记录。"));
+    riskList.replaceChildren(createListItem("当前没有风险记录。"));
     return;
   }
 
@@ -170,20 +188,17 @@ function renderReport(run) {
 }
 
 function markStaticControls() {
-  document.querySelectorAll("button").forEach((button) => {
-    if (button.id === "start-run-button") {
-      button.disabled = !backendOnline;
-      button.setAttribute("aria-disabled", String(!backendOnline));
-      button.title = backendOnline
-        ? "通过本地后端启动 game_reverse runner。"
-        : "未检测到本地后端；运行 python -m game_reverse.web_server 后启用。";
-      return;
-    }
+  const selectedRunner = currentData
+    ? currentData.runners.find((runner) => runner.id === selectedRunnerId)
+    : null;
+  const startButton = document.getElementById("start-run-button");
+  const canStart = Boolean(backendOnline && selectedRunner && isRunnerAvailable(selectedRunner));
 
-    button.disabled = true;
-    button.setAttribute("aria-disabled", "true");
-    button.title = "该控件将在后端功能扩展后启用。";
-  });
+  startButton.disabled = !canStart;
+  startButton.setAttribute("aria-disabled", String(!canStart));
+  startButton.title = canStart
+    ? `通过本地后端启动 ${selectedRunnerId}`
+    : "需要本地后端在线，并选择可用执行器。";
 }
 
 function wireStartButton() {
@@ -201,7 +216,7 @@ function startRun() {
 
   button.disabled = true;
   clearPollTimer();
-  setRunState("排队中", "正在通过本地后端启动 game_reverse runner。");
+  setRunState("排队中", `正在通过本地后端启动 ${selectedRunnerId}`);
   renderEvents([]);
 
   const payload = buildRunPayload(currentData.config);
@@ -263,6 +278,7 @@ function pollRun(runId) {
 
       const button = document.getElementById("start-run-button");
       button.disabled = !backendOnline;
+      markStaticControls();
 
       if (run.status === "completed") {
         loadSessions();
@@ -275,8 +291,7 @@ function pollRun(runId) {
     })
     .catch((error) => {
       setRunState("运行失败", error.message);
-      const button = document.getElementById("start-run-button");
-      button.disabled = !backendOnline;
+      markStaticControls();
     });
 }
 
@@ -333,19 +348,54 @@ function updateBackendStatus() {
   }
 }
 
+function isRunnerAvailable(runner) {
+  if (typeof runner.available === "boolean") {
+    return runner.available;
+  }
+  return ["available", "ready", "可用", "可接入"].includes(runner.status);
+}
+
+function runnerStatusLabel(runner, available) {
+  if (runner.status && !["available", "unavailable", "ready"].includes(runner.status)) {
+    return runner.status;
+  }
+  return available ? "可用" : "不可用";
+}
+
 function buildRunPayload(config) {
   return {
-    runner: "game_reverse",
-    device_uri: config.device_uri,
-    package_name: config.package_name,
-    max_steps: config.max_steps,
-    mission: config.mission,
-    model: config.model,
+    runner: selectedRunnerId,
+    device_uri: readInputValue("device-uri-input", config.device_uri || "Android:///"),
+    package_name: readInputValue("package-name-input", config.package_name || ""),
+    max_steps: readPositiveInt("max-steps-input", config.max_steps || 50),
+    mission: {
+      ...config.mission,
+      goal: readInputValue("mission-goal", config.mission.goal || ""),
+    },
+    model: readInputValue("model-input", config.model || ""),
     allowed_actions: config.allowed_actions,
     recent_steps: config.recent_steps,
     consecutive_failure_limit: config.consecutive_failure_limit,
     enable_unsafe_actions: false,
   };
+}
+
+function readInputValue(id, fallback) {
+  const field = document.getElementById(id);
+  const value = field ? field.value.trim() : "";
+  return value || fallback;
+}
+
+function readPositiveInt(id, fallback) {
+  const value = Number.parseInt(readInputValue(id, String(fallback)), 10);
+  return Number.isFinite(value) && value > 0 ? value : fallback;
+}
+
+function setInputValue(id, value) {
+  const field = document.getElementById(id);
+  if (field) {
+    field.value = value;
+  }
 }
 
 function readJsonOrThrow(response, prefix) {
@@ -374,6 +424,7 @@ function updateOutputsFromRun(run) {
   const outputs = document.getElementById("output-list");
   const outputEntries = [
     ["运行 ID", run.id],
+    ["执行器", run.runner || selectedRunnerId],
     ["运行状态", run.status],
     ["会话目录", run.session_dir || "-"],
   ];
@@ -399,7 +450,7 @@ function renderEvents(events) {
       const type = document.createElement("strong");
       type.textContent = eventTypeLabel(event.type);
       const detail = document.createElement("span");
-      detail.textContent = event.error || event.session_dir || event.created_at || "";
+      detail.textContent = event.message || event.error || event.session_dir || event.created_at || "";
 
       item.append(type, detail);
       return item;
@@ -472,22 +523,15 @@ function eventTypeLabel(type) {
     run_started: "已启动",
     run_completed: "已完成",
     run_failed: "已失败",
+    runner_process_started: "进程启动",
+    runner_event: "执行器事件",
+    runner_parse_error: "事件解析错误",
+    runner_stderr: "执行器输出",
+    runner_timeout: "执行超时",
+    runner_process_failed: "进程失败",
     event_error: "事件错误",
   };
   return labels[type] || type;
-}
-
-function createField(label, value) {
-  const field = document.createElement("div");
-  field.className = "field";
-
-  const name = document.createElement("span");
-  name.textContent = label;
-  const content = document.createElement("strong");
-  content.textContent = value;
-
-  field.append(name, content);
-  return field;
 }
 
 function createOutput(label, value) {
@@ -515,21 +559,12 @@ function createListItem(text) {
   return item;
 }
 
-function missionTypeLabel(type) {
-  const labels = {
-    free_explore: "自由探索",
-    feature_test: "功能测试",
-    level_design_reverse: "关卡逆向",
-  };
-  return labels[type] || type;
-}
-
 function renderLoadError(error) {
   const state = document.getElementById("run-state");
   state.textContent = "加载失败";
   state.title = error.message;
 
-  const timeline = document.getElementById("timeline");
+  const timeline = document.getElementById("timeline-list");
   const message = document.createElement("p");
   message.className = "safety-copy";
   message.textContent = error.message;

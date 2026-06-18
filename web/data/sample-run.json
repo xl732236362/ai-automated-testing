@@ -31,18 +31,21 @@
     {
       "id": "game_reverse",
       "name": "game_reverse",
+      "available": true,
       "status": "可接入",
       "description": "直接调用当前项目的 Python 探索循环，适合稳定任务和自动报告。"
     },
     {
       "id": "codex_exec",
       "name": "Codex CLI",
+      "available": false,
       "status": "计划接入",
       "description": "后端通过 codex exec --json 启动非交互任务，并把 JSONL 事件推送到页面。"
     },
     {
       "id": "claude_print",
       "name": "ClaudeCode CLI",
+      "available": false,
       "status": "计划接入",
       "description": "后端通过 claude -p 的 stream-json 输出观察任务过程。"
     }

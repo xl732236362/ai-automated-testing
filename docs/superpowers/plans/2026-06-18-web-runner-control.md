@@ -23,7 +23,7 @@
 **Files:**
 - Modify: `tests/test_web_console_static.py`
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 Update `test_index_wires_assets_and_sample_data`:
 
@@ -62,7 +62,7 @@ Add:
         self.assertIn("运行完成", script)
 ```
 
-- [ ] **Step 2: Run RED**
+- [x] **Step 2: Run RED**
 
 Run:
 
@@ -81,7 +81,7 @@ Do not commit a failing state. Proceed to Task 2.
 **Files:**
 - Modify: `web/index.html`
 
-- [ ] **Step 1: Replace static shell text and add input IDs**
+- [x] **Step 1: Replace static shell text and add input IDs**
 
 Rewrite the touched labels in `web/index.html` so they are readable Chinese. Keep the same three-column layout and existing IDs, but add these controls in the Mission panel:
 
@@ -112,7 +112,7 @@ Keep:
 
 Do not add tap/swipe controls.
 
-- [ ] **Step 2: Run HTML/static RED-GREEN check**
+- [x] **Step 2: Run HTML/static RED-GREEN check**
 
 Run:
 
@@ -127,7 +127,7 @@ Expected: remaining failures should now be in `web/app.js`, not missing HTML IDs
 **Files:**
 - Modify: `web/app.js`
 
-- [ ] **Step 1: Add selected runner state**
+- [x] **Step 1: Add selected runner state**
 
 Add near the globals:
 
@@ -135,7 +135,7 @@ Add near the globals:
 let selectedRunnerId = "game_reverse";
 ```
 
-- [ ] **Step 2: Merge backend runner metadata**
+- [x] **Step 2: Merge backend runner metadata**
 
 Change startup so `detectBackend()` returns health and `renderConsole()` receives it:
 
@@ -169,7 +169,7 @@ function chooseInitialRunner(runners) {
 }
 ```
 
-- [ ] **Step 3: Render selectable runner buttons**
+- [x] **Step 3: Render selectable runner buttons**
 
 Update `renderRunners(runners)` so each card is a `button`:
 
@@ -192,7 +192,7 @@ Use labels:
 status.textContent = runner.available ? "可用" : "不可用";
 ```
 
-- [ ] **Step 4: Render editable config fields**
+- [x] **Step 4: Render editable config fields**
 
 Change `renderConfig(config)` to set:
 
@@ -205,7 +205,7 @@ document.getElementById("max-steps-input").value = config.max_steps || 50;
 
 Keep mission type as read-only display if useful.
 
-- [ ] **Step 5: Build payload from DOM**
+- [x] **Step 5: Build payload from DOM**
 
 Replace `buildRunPayload(config)` with:
 
@@ -244,7 +244,7 @@ function readPositiveInt(id, fallback) {
 }
 ```
 
-- [ ] **Step 6: Improve status and event rendering**
+- [x] **Step 6: Improve status and event rendering**
 
 Update status strings to readable Chinese:
 
@@ -261,7 +261,7 @@ In `renderEvents`, show:
 detail.textContent = event.message || event.error || event.session_dir || event.created_at || "";
 ```
 
-- [ ] **Step 7: Run JS/static GREEN**
+- [x] **Step 7: Run JS/static GREEN**
 
 Run:
 
@@ -277,7 +277,7 @@ Expected: both pass.
 **Files:**
 - Modify: `web/styles.css`
 
-- [ ] **Step 1: Add input styling**
+- [x] **Step 1: Add input styling**
 
 Add `input` beside existing `button, textarea` font reset:
 
@@ -314,7 +314,7 @@ Add compact input styles:
 }
 ```
 
-- [ ] **Step 2: Add runner selected/disabled states**
+- [x] **Step 2: Add runner selected/disabled states**
 
 ```css
 .runner-card {
@@ -334,7 +334,7 @@ Add compact input styles:
 }
 ```
 
-- [ ] **Step 3: Run style/static check**
+- [x] **Step 3: Run style/static check**
 
 Run:
 
@@ -350,7 +350,7 @@ Expected: pass.
 **Files:**
 - Verify only unless failures require fixes.
 
-- [ ] **Step 1: Start backend with Codex enabled**
+- [x] **Step 1: Start backend with Codex enabled**
 
 Run:
 
@@ -392,7 +392,7 @@ Stop the local backend process.
 - Modify: `tests/test_web_console_static.py`
 - Modify: `docs/superpowers/plans/2026-06-18-web-runner-control.md`
 
-- [ ] **Step 1: Run final checks**
+- [x] **Step 1: Run final checks**
 
 Run:
 
@@ -405,7 +405,7 @@ git status --short
 
 Expected: tests pass, no whitespace errors, only intended files changed.
 
-- [ ] **Step 2: Mark executed plan checkboxes**
+- [x] **Step 2: Mark executed plan checkboxes**
 
 Mark only executed steps as `[x]`.
 
