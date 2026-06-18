@@ -106,7 +106,16 @@
           </div>
         </div>
         <div class="actions-row" id="allowed-actions"></div>
-        <p class="safety-copy">当前页面只提交截图、等待、返回这类安全动作。点击和滑动仍需后端显式开启。</p>
+        <div class="permission-toggle" id="unsafe-actions-panel">
+          <label class="toggle-row" for="allow-unsafe-actions-input">
+            <input id="allow-unsafe-actions-input" type="checkbox">
+            <span>
+              <strong>允许点击/滑动</strong>
+              <small>开启后，本次运行可能会真实点击或滑动当前连接的设备。请确认包名和画面正确。</small>
+            </span>
+          </label>
+        </div>
+        <p class="safety-copy">交互权限默认关闭。当前页面只提交截图、等待、返回这类安全动作。点击和滑动仍需后端显式开启。</p>
       </section>
 
       <section id="timeline" class="panel">
