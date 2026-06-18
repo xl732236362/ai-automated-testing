@@ -23,6 +23,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   wireStartButton();
   wireUnsafeActionToggle();
+  wireTargetConfigControls();
   Promise.all([loadSample(sampleUrl), detectBackend()])
     .then(([sample, health]) => {
       currentData = mergeBackendHealth(sample, health);
@@ -238,6 +239,146 @@ function getEffectiveAllowedActions(config) {
   return Array.from(new Set([...baseActions, ...UNSAFE_ACTIONS]));
 }
 
+function wireTargetConfigControls() {
+  const detectButton = document.getElementById("detect-devices-button");
+  const foregroundButton = document.getElementById("use-foreground-app-button");
+  const validateButton = document.getElementById("validate-target-button");
+
+  if (detectButton) {
+    detectButton.addEventListener("click", detectDevices);
+  }
+  if (foregroundButton) {
+    foregroundButton.addEventListener("click", useForegroundApp);
+  }
+  if (validateButton) {
+    validateButton.addEventListener("click", validateTargetConfig);
+  }
+  updateTargetConfigControls();
+}
+
+function detectDevices() {
+  setTargetConfigStatus("正在检测设备...", "info");
+  return fetch(`${API_BASE}/api/devices`)
+    .then((response) => readJsonOrThrow(response, "检测设备失败"))
+    .then((data) => {
+      const devices = data.devices || [];
+      if (devices.length === 0) {
+        setTargetConfigStatus("未检测到在线设备", "warning");
+        return devices;
+      }
+
+      const firstDevice = devices[0];
+      setInputValue("device-uri-input", firstDevice.uri || `Android:///${firstDevice.id}`);
+      if (devices.length === 1) {
+        setTargetConfigStatus(`已连接 ${firstDevice.id}`, "ok");
+        return devices;
+      }
+
+      setTargetConfigStatus(
+        `检测到 ${devices.length} 个设备，已选择 ${firstDevice.id}`,
+        "warning"
+      );
+      return devices;
+    })
+    .catch((error) => {
+      setTargetConfigStatus(error.message, "error");
+      return [];
+    });
+}
+
+function useForegroundApp() {
+  const deviceId = readDeviceIdFromInput();
+  if (!deviceId) {
+    setTargetConfigStatus("设备地址格式不正确", "error");
+    return Promise.resolve(null);
+  }
+
+  setTargetConfigStatus("正在读取前台应用...", "info");
+  return fetch(`${API_BASE}/api/devices/${encodeURIComponent(deviceId)}/foreground`)
+    .then((response) => readJsonOrThrow(response, "读取前台应用失败"))
+    .then((data) => {
+      setInputValue("package-name-input", data.package_name || "");
+      setTargetConfigStatus(
+        `当前前台应用 ${data.package_name}/${data.activity || ""}`,
+        "ok"
+      );
+      return data;
+    })
+    .catch((error) => {
+      setTargetConfigStatus(error.message, "error");
+      return null;
+    });
+}
+
+function validateTargetConfig() {
+  const deviceId = readDeviceIdFromInput();
+  const packageName = readInputValue("package-name-input", "");
+  if (!deviceId) {
+    setTargetConfigStatus("设备地址格式不正确", "error");
+    return Promise.resolve(null);
+  }
+  if (!packageName) {
+    setTargetConfigStatus("应用包名不能为空", "error");
+    return Promise.resolve(null);
+  }
+
+  setTargetConfigStatus("正在校验配置...", "info");
+  return fetch(
+    `${API_BASE}/api/devices/${encodeURIComponent(deviceId)}/packages/${encodeURIComponent(packageName)}/validation`
+  )
+    .then((response) => readJsonOrThrow(response, "校验配置失败"))
+    .then((data) => {
+      if (data.installed && data.launchable) {
+        setTargetConfigStatus(
+          `包名可启动：${data.package_name}/${data.activity || ""}`,
+          "ok"
+        );
+      } else {
+        setTargetConfigStatus((data.warnings || ["配置需要确认"]).join("；"), "warning");
+      }
+      return data;
+    })
+    .catch((error) => {
+      setTargetConfigStatus(error.message, "error");
+      return null;
+    });
+}
+
+function readDeviceIdFromInput() {
+  const deviceUri = readInputValue("device-uri-input", "");
+  const match = deviceUri.match(/^Android:\/\/(?:[^/?#]+)?\/([^/?#]+)(?:[?#].*)?$/);
+  if (!match) {
+    return "";
+  }
+
+  try {
+    return decodeURIComponent(match[1]);
+  } catch (error) {
+    return match[1];
+  }
+}
+
+function setTargetConfigStatus(message, tone) {
+  const status = document.getElementById("target-config-status");
+  if (!status) {
+    return;
+  }
+  status.textContent = message || "未检测设备";
+  status.className = "target-status";
+  if (tone) {
+    status.classList.add(`is-${tone}`);
+  }
+}
+
+function updateTargetConfigControls() {
+  ["detect-devices-button", "use-foreground-app-button", "validate-target-button"].forEach((id) => {
+    const button = document.getElementById(id);
+    if (button) {
+      button.disabled = !backendOnline;
+    }
+  });
+}
+
 function wireStartButton() {
   const button = document.getElementById("start-run-button");
   button.addEventListener("click", () => {
@@ -379,6 +520,7 @@ function updateBackendStatus() {
   status.title = backendOnline
     ? "已连接本地 Python 后端。"
     : "未检测到本地 Python 后端，当前使用静态样例数据。";
+  updateTargetConfigControls();
   markStaticControls();
   if (backendOnline) {
     loadSessions();
