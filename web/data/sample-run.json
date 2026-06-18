@@ -73,15 +73,11 @@
         "state": "aiming_view",
         "screen_summary": "画面进入准星视角，中心区域可用于对准目标。",
         "action": {
-          "type": "swipe",
-          "x1": 520,
-          "y1": 900,
-          "x2": 430,
-          "y2": 900,
-          "duration": 0.4
+          "type": "wait",
+          "seconds": 1
         },
-        "reason": "微调视角以验证场景移动与目标计数之间的关系。",
-        "result": "ok",
+        "reason": "静态预览仅等待并记录状态，不执行滑动或点击动作。",
+        "result": "safe_preview",
         "risks": []
       },
       {
