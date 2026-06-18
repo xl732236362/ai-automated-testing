@@ -6,6 +6,7 @@ import os
 import shutil
 import subprocess
 import threading
+import time
 import inspect
 from dataclasses import dataclass, field
 
@@ -17,6 +18,7 @@ SECRET_KEY_PARTS = ("key", "token", "secret", "password", "authorization")
 CODEX_STDOUT_FILENAME = "codex_stdout.jsonl"
 CODEX_STDERR_FILENAME = "codex_stderr.log"
 CODEX_LAST_MESSAGE_FILENAME = "codex_last_message.txt"
+CODEX_RUNNER_SUMMARY_FILENAME = "codex_runner_summary.md"
 FINAL_REPORT_FILENAME = "final_report.md"
 
 
@@ -67,27 +69,34 @@ class GameReverseExecutor:
 @dataclass
 class CodexExecExecutor:
     project_root: str = PROJECT_ROOT
-    enabled: bool = False
+    enabled: bool = True
     command: str = "codex"
-    timeout_seconds: int = 900
+    timeout_seconds: int = 3600
+    idle_timeout_seconds: int = 600
+    poll_interval_seconds: float = 0.2
     sandbox: str = "workspace-write"
     profile: str = ""
     model: str = ""
     popen_factory: object = field(default=subprocess.Popen, repr=False)
     which: object = field(default=shutil.which, repr=False)
+    monotonic: object = field(default=time.monotonic, repr=False)
+    sleep: object = field(default=time.sleep, repr=False)
+    process_tree_terminator: object = None
     id: str = "codex_exec"
     name: str = "Codex CLI"
-    description: str = (
-        "Codex CLI runner is disabled. Set GAME_REVERSE_ENABLE_CODEX_EXEC=1 to enable it."
-    )
+    description: str = "Run local Codex CLI non-interactively with codex exec."
 
     def __post_init__(self):
+        if self.process_tree_terminator is None:
+            self.process_tree_terminator = terminate_process_tree
         self.command_path = self.which(self.command) if self.command else None
         self.available = bool(self.enabled and self.command_path)
         if self.available:
             self.description = "Run local Codex CLI non-interactively with codex exec."
         elif self.enabled:
             self.description = "Codex CLI command not found: %s" % self.command
+        else:
+            self.description = "Codex CLI runner is disabled."
 
     def metadata(self):
         return {
@@ -110,7 +119,7 @@ class CodexExecExecutor:
         final_message_path = os.path.join(context.run_dir, CODEX_LAST_MESSAGE_FILENAME)
         report_path = os.path.join(context.run_dir, FINAL_REPORT_FILENAME)
 
-        prompt = self.build_prompt(payload, config)
+        prompt = self.build_prompt(payload, config, context=context)
         args = self.build_command(
             prompt,
             repo_root=repo_root,
@@ -141,36 +150,59 @@ class CodexExecExecutor:
             cwd=repo_root,
         )
 
+        activity = {"last_at": self.monotonic()}
+        activity_lock = threading.Lock()
+
+        def mark_activity():
+            with activity_lock:
+                activity["last_at"] = self.monotonic()
+
         stdout_thread = threading.Thread(
             target=self._drain_stdout,
-            args=(process.stdout, stdout_path, context),
+            args=(process.stdout, stdout_path, context, mark_activity),
             daemon=True,
         )
         stderr_thread = threading.Thread(
             target=self._drain_stderr,
-            args=(process.stderr, stderr_path, context),
+            args=(process.stderr, stderr_path, context, mark_activity),
             daemon=True,
         )
         stdout_thread.start()
         stderr_thread.start()
 
-        try:
-            return_code = process.wait(timeout=self.timeout_seconds)
-        except subprocess.TimeoutExpired:
-            context.emit_event(
-                "runner_timeout",
-                source=self.id,
-                timeout_seconds=self.timeout_seconds,
-            )
-            process.terminate()
-            try:
-                process.wait(timeout=2)
-            except subprocess.TimeoutExpired:
-                process.kill()
-                process.wait(timeout=2)
-            stdout_thread.join(timeout=2)
-            stderr_thread.join(timeout=2)
-            raise ExecutorError("codex exec timed out")
+        started_at = self.monotonic()
+        return_code = None
+        while return_code is None:
+            return_code = self._poll_process(process)
+            if return_code is not None:
+                break
+
+            now = self.monotonic()
+            if now - started_at >= self.timeout_seconds:
+                context.emit_event(
+                    "runner_timeout",
+                    source=self.id,
+                    timeout_seconds=self.timeout_seconds,
+                )
+                self._terminate_process(process)
+                stdout_thread.join(timeout=2)
+                stderr_thread.join(timeout=2)
+                raise ExecutorError("codex exec timed out")
+
+            with activity_lock:
+                idle_for = now - activity["last_at"]
+            if idle_for >= self.idle_timeout_seconds:
+                context.emit_event(
+                    "runner_idle_timeout",
+                    source=self.id,
+                    timeout_seconds=self.idle_timeout_seconds,
+                )
+                self._terminate_process(process)
+                stdout_thread.join(timeout=2)
+                stderr_thread.join(timeout=2)
+                raise ExecutorError("codex exec idle timed out")
+
+            self.sleep(self.poll_interval_seconds)
 
         stdout_thread.join(timeout=2)
         stderr_thread.join(timeout=2)
@@ -183,6 +215,12 @@ class CodexExecExecutor:
             )
             raise ExecutorError("codex exec exited with code %s" % return_code)
 
+        self._write_runner_summary(
+            summary_path=os.path.join(context.run_dir, CODEX_RUNNER_SUMMARY_FILENAME),
+            context=context,
+            payload=payload,
+            exit_code=return_code,
+        )
         self._write_final_report(
             report_path=report_path,
             context=context,
@@ -193,8 +231,8 @@ class CodexExecExecutor:
         )
         return context.run_dir
 
-    def build_prompt(self, payload, config):
-        return build_runner_prompt(payload, self.id, config=config)
+    def build_prompt(self, payload, config, context=None):
+        return build_runner_prompt(payload, self.id, config=config, context=context)
 
     def build_command(self, prompt, repo_root=None, final_message_path=None):
         repo_root = validate_repo_root(repo_root or self.project_root, self.project_root)
@@ -235,17 +273,33 @@ class CodexExecExecutor:
         process.stdin.flush()
         process.stdin.close()
 
-    def _drain_stdout(self, stream, stdout_path, context):
+    def _poll_process(self, process):
+        poll = getattr(process, "poll", None)
+        if poll is not None:
+            return poll()
+        try:
+            return process.wait(timeout=0)
+        except subprocess.TimeoutExpired:
+            return None
+
+    def _terminate_process(self, process):
+        self.process_tree_terminator(process)
+
+    def _drain_stdout(self, stream, stdout_path, context, mark_activity=None):
         with open(stdout_path, "w", encoding="utf-8") as stdout_file:
             for line in stream or []:
+                if mark_activity is not None and line.strip():
+                    mark_activity()
                 stdout_file.write(line)
                 stdout_file.flush()
                 for event in self.parse_events([line]):
                     self._emit_parsed_event(context, event)
 
-    def _drain_stderr(self, stream, stderr_path, context):
+    def _drain_stderr(self, stream, stderr_path, context, mark_activity=None):
         with open(stderr_path, "w", encoding="utf-8") as stderr_file:
             for line in stream or []:
+                if mark_activity is not None and line.strip():
+                    mark_activity()
                 stderr_file.write(line)
                 stderr_file.flush()
                 message = line.strip()
@@ -262,6 +316,24 @@ class CodexExecExecutor:
         extra.pop("type", None)
         context.emit_event(event_type, **extra)
 
+    def _write_runner_summary(self, summary_path, context, payload, exit_code):
+        lines = [
+            "# Codex Runner Summary",
+            "",
+            "- Run ID: %s" % context.run_id,
+            "- Runner: %s" % self.id,
+            "- Package: %s" % payload.get("package_name", ""),
+            "- Exit code: %s" % exit_code,
+            "",
+            "## Logs",
+            "",
+            "- stdout: %s" % CODEX_STDOUT_FILENAME,
+            "- stderr: %s" % CODEX_STDERR_FILENAME,
+            "- last message: %s" % CODEX_LAST_MESSAGE_FILENAME,
+        ]
+        with open(summary_path, "w", encoding="utf-8") as summary:
+            summary.write("\n".join(lines) + "\n")
+
     def _write_final_report(
         self,
         report_path,
@@ -271,6 +343,9 @@ class CodexExecExecutor:
         final_message_path,
         exit_code,
     ):
+        if os.path.exists(report_path) and os.path.getsize(report_path) > 0:
+            return
+
         final_message = ""
         if os.path.exists(final_message_path):
             with open(final_message_path, "r", encoding="utf-8") as message_file:
@@ -360,11 +435,14 @@ def create_default_registry(runner, environ=None, codex_which=None, codex_popen_
         [
             GameReverseExecutor(runner),
             CodexExecExecutor(
-                enabled=env_flag_enabled(environ.get("GAME_REVERSE_ENABLE_CODEX_EXEC")),
                 command=environ.get("GAME_REVERSE_CODEX_COMMAND", "codex") or "codex",
                 timeout_seconds=parse_positive_int(
                     environ.get("GAME_REVERSE_CODEX_TIMEOUT_SECONDS"),
-                    900,
+                    3600,
+                ),
+                idle_timeout_seconds=parse_positive_int(
+                    environ.get("GAME_REVERSE_CODEX_IDLE_TIMEOUT_SECONDS"),
+                    600,
                 ),
                 sandbox=environ.get("GAME_REVERSE_CODEX_SANDBOX", "workspace-write")
                 or "workspace-write",
@@ -378,10 +456,6 @@ def create_default_registry(runner, environ=None, codex_which=None, codex_popen_
     )
 
 
-def env_flag_enabled(value):
-    return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
-
-
 def parse_positive_int(value, default):
     try:
         parsed = int(value)
@@ -392,7 +466,41 @@ def parse_positive_int(value, default):
     return parsed
 
 
-def build_runner_prompt(payload, runner_id, config=None):
+def terminate_process_tree(process):
+    pid = getattr(process, "pid", None)
+    if os.name == "nt" and pid:
+        try:
+            subprocess.run(
+                ["taskkill", "/PID", str(pid), "/T", "/F"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                check=False,
+            )
+        except OSError:
+            pass
+    if process_has_exited(process):
+        return
+    try:
+        process.terminate()
+        process.wait(timeout=2)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.wait(timeout=2)
+    except OSError:
+        pass
+
+
+def process_has_exited(process):
+    poll = getattr(process, "poll", None)
+    if poll is None:
+        return False
+    try:
+        return poll() is not None
+    except OSError:
+        return True
+
+
+def build_runner_prompt(payload, runner_id, config=None, context=None):
     mission = payload.get("mission") or {}
     allowed_actions = payload.get("allowed_actions") or []
     device_uri = payload.get("device_uri", "")
@@ -432,6 +540,19 @@ def build_runner_prompt(payload, runner_id, config=None):
         "Use existing project tools and avoid unrelated code changes.",
         "When done, provide a final answer that summarizes what you checked and the result.",
     ]
+    if context is not None:
+        output_dir = os.path.abspath(context.run_dir)
+        lines.extend(
+            [
+                "",
+                "Run artifact contract:",
+                "Run ID: %s" % context.run_id,
+                "Output directory: %s" % output_dir,
+                "Write all run artifacts into the output directory above.",
+                "Do not create a sibling session directory under game_reverse/outputs/sessions.",
+                "Expected artifact names: final_report.md, actions.jsonl, observations.jsonl, mission_draft.md, screens/.",
+            ]
+        )
     return "\n".join(lines)
 
 

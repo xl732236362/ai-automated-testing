@@ -22,6 +22,7 @@ class FakeProcess:
         self.stdout = stdout_lines or []
         self.stderr = stderr_lines or []
         self.returncode = returncode
+        self.pid = 1234
         self.terminated = False
         self.killed = False
 
@@ -50,16 +51,45 @@ class FakeStdin:
         self.closed = True
 
 
-class TimeoutFakeProcess(FakeProcess):
-    def __init__(self):
-        super().__init__(stdout_lines=[], stderr_lines=[], returncode=None)
-        self.wait_calls = 0
+class PollingFakeProcess(FakeProcess):
+    def __init__(self, return_after_polls=3, returncode=0):
+        super().__init__(stdout_lines=[], stderr_lines=[], returncode=returncode)
+        self.polls = 0
+        self.return_after_polls = return_after_polls
+
+    def poll(self):
+        self.polls += 1
+        if self.polls >= self.return_after_polls:
+            return self.returncode
+        return None
 
     def wait(self, timeout=None):
-        self.wait_calls += 1
-        if self.wait_calls == 1:
-            raise subprocess.TimeoutExpired(cmd="codex", timeout=timeout)
-        return -9
+        return self.returncode
+
+
+class TimedStdout:
+    def __init__(self, lines, clock):
+        self.lines = list(lines)
+        self.clock = clock
+
+    def __iter__(self):
+        for advance_seconds, line in self.lines:
+            self.clock.advance(advance_seconds)
+            yield line
+
+
+class ManualClock:
+    def __init__(self):
+        self.current = 0
+
+    def monotonic(self):
+        return self.current
+
+    def advance(self, seconds):
+        self.current += seconds
+
+    def sleep(self, seconds):
+        self.current += seconds
 
 
 def make_context(run_id, run_dir, events):
@@ -78,19 +108,20 @@ class TestExecutorRegistry(unittest.TestCase):
         registry = create_default_registry(
             runner=lambda config: "session-dir",
             environ={},
+            codex_which=lambda command: "C:/tools/codex.cmd",
         )
 
         runners = registry.metadata()
 
         self.assertEqual([runner["id"] for runner in runners], ["game_reverse", "codex_exec", "claude_print"])
         self.assertTrue(runners[0]["available"])
-        self.assertFalse(runners[1]["available"])
+        self.assertTrue(runners[1]["available"])
         self.assertFalse(runners[2]["available"])
 
-    def test_codex_exec_is_available_when_enabled_and_binary_exists(self):
+    def test_codex_exec_is_available_by_default_when_binary_exists(self):
         registry = create_default_registry(
             runner=lambda config: "session-dir",
-            environ={"GAME_REVERSE_ENABLE_CODEX_EXEC": "1"},
+            environ={},
             codex_which=lambda command: "C:/tools/codex.cmd",
         )
 
@@ -99,10 +130,10 @@ class TestExecutorRegistry(unittest.TestCase):
         self.assertTrue(runners["codex_exec"]["available"])
         self.assertIn("Codex", runners["codex_exec"]["description"])
 
-    def test_codex_exec_is_unavailable_when_enabled_but_binary_missing(self):
+    def test_codex_exec_is_unavailable_when_binary_missing(self):
         registry = create_default_registry(
             runner=lambda config: "session-dir",
-            environ={"GAME_REVERSE_ENABLE_CODEX_EXEC": "1"},
+            environ={},
             codex_which=lambda command: None,
         )
 
@@ -115,9 +146,9 @@ class TestExecutorRegistry(unittest.TestCase):
         registry = create_default_registry(
             runner=lambda config: "session-dir",
             environ={
-                "GAME_REVERSE_ENABLE_CODEX_EXEC": "1",
                 "GAME_REVERSE_CODEX_COMMAND": "codex-custom",
                 "GAME_REVERSE_CODEX_TIMEOUT_SECONDS": "123",
+                "GAME_REVERSE_CODEX_IDLE_TIMEOUT_SECONDS": "45",
                 "GAME_REVERSE_CODEX_SANDBOX": "read-only",
                 "GAME_REVERSE_CODEX_PROFILE": "local",
                 "GAME_REVERSE_CODEX_MODEL": "gpt-5.1-codex",
@@ -130,6 +161,7 @@ class TestExecutorRegistry(unittest.TestCase):
         self.assertTrue(executor.available)
         self.assertEqual(executor.command, "codex-custom")
         self.assertEqual(executor.timeout_seconds, 123)
+        self.assertEqual(executor.idle_timeout_seconds, 45)
         self.assertEqual(executor.sandbox, "read-only")
         self.assertEqual(executor.profile, "local")
         self.assertEqual(executor.model, "gpt-5.1-codex")
@@ -283,6 +315,26 @@ class TestExecutorCommandBuilders(unittest.TestCase):
         self.assertNotIn("api_key", prompt)
         self.assertNotIn("authorization", prompt)
 
+    def test_prompt_includes_fixed_run_output_contract_when_context_is_available(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            events = []
+            context = make_context("run-fixed", os.path.join(tmpdir, "run-fixed"), events)
+
+            prompt = CodexExecExecutor(project_root=os.getcwd()).build_prompt(
+                self.payload(),
+                config=None,
+                context=context,
+            )
+
+            self.assertIn("Run ID: run-fixed", prompt)
+            self.assertIn("Output directory: %s" % os.path.abspath(context.run_dir), prompt)
+            self.assertIn("Write all run artifacts into the output directory above", prompt)
+            self.assertIn("Do not create a sibling session directory", prompt)
+            self.assertIn("final_report.md", prompt)
+            self.assertIn("actions.jsonl", prompt)
+            self.assertIn("observations.jsonl", prompt)
+            self.assertIn("screens/", prompt)
+
     def test_validate_repo_root_rejects_parent_directory(self):
         project_root = os.path.join(os.getcwd(), "project")
         parent = os.path.dirname(project_root)
@@ -398,25 +450,129 @@ class TestCodexExecProcess(unittest.TestCase):
             self.assertTrue(any(event.get("message") == "observed screen" for event in events))
             self.assertTrue(any(event["type"] == "runner_stderr" for event in events))
 
-    def test_codex_timeout_terminates_process_and_emits_event(self):
+    def test_codex_preserves_report_written_by_process(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             events = []
-            process = TimeoutFakeProcess()
+
+            def fake_popen(args, **kwargs):
+                run_dir = os.path.dirname(args[args.index("--output-last-message") + 1])
+                with open(os.path.join(run_dir, "final_report.md"), "w", encoding="utf-8") as report:
+                    report.write("# Real Exploration Report\n\nCodex wrote this report.")
+                return FakeProcess(returncode=0)
 
             executor = CodexExecExecutor(
                 project_root=os.getcwd(),
                 enabled=True,
-                timeout_seconds=1,
+                popen_factory=fake_popen,
+                which=lambda command: command,
+            )
+            context = make_context("run-report", os.path.join(tmpdir, "run-report"), events)
+
+            session_dir = executor.start(config=None, payload=self.payload(), context=context)
+
+            with open(os.path.join(session_dir, "final_report.md"), encoding="utf-8") as report_file:
+                report = report_file.read()
+            self.assertIn("# Real Exploration Report", report)
+            self.assertIn("Codex wrote this report.", report)
+            self.assertNotIn("# Codex Exec Run", report)
+            with open(os.path.join(session_dir, "codex_runner_summary.md"), encoding="utf-8") as summary_file:
+                summary = summary_file.read()
+            self.assertIn("# Codex Runner Summary", summary)
+            self.assertIn("codex_stdout.jsonl", summary)
+            self.assertIn("codex_stderr.log", summary)
+
+    def test_codex_timeout_terminates_process_and_emits_event(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            events = []
+            clock = ManualClock()
+            process = PollingFakeProcess(return_after_polls=100)
+            terminated = []
+
+            executor = CodexExecExecutor(
+                project_root=os.getcwd(),
+                enabled=True,
+                timeout_seconds=5,
+                idle_timeout_seconds=30,
                 popen_factory=lambda args, **kwargs: process,
                 which=lambda command: command,
+                monotonic=clock.monotonic,
+                sleep=clock.sleep,
+                process_tree_terminator=lambda process: terminated.append(process.pid),
             )
             context = make_context("run-timeout", os.path.join(tmpdir, "run-timeout"), events)
 
             with self.assertRaisesRegex(Exception, "timed out"):
                 executor.start(config=None, payload=self.payload(), context=context)
 
-            self.assertTrue(process.terminated)
+            self.assertEqual(terminated, [1234])
             self.assertTrue(any(event["type"] == "runner_timeout" for event in events))
+
+    def test_codex_activity_extends_idle_timeout(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            events = []
+            clock = ManualClock()
+            process = PollingFakeProcess(return_after_polls=5)
+            process.stdout = TimedStdout(
+                [
+                    (4, '{"type": "agent_message", "message": "first progress"}\n'),
+                    (4, '{"type": "agent_message", "message": "second progress"}\n'),
+                ],
+                clock,
+            )
+
+            def fake_popen(args, **kwargs):
+                final_path = args[args.index("--output-last-message") + 1]
+                with open(final_path, "w", encoding="utf-8") as last_message:
+                    last_message.write("Completed after progress")
+                return process
+
+            executor = CodexExecExecutor(
+                project_root=os.getcwd(),
+                enabled=True,
+                timeout_seconds=30,
+                idle_timeout_seconds=5,
+                popen_factory=fake_popen,
+                which=lambda command: command,
+                monotonic=clock.monotonic,
+                sleep=clock.sleep,
+            )
+            context = make_context("run-progress", os.path.join(tmpdir, "run-progress"), events)
+
+            session_dir = executor.start(config=None, payload=self.payload(), context=context)
+
+            self.assertEqual(session_dir, context.run_dir)
+            self.assertFalse(process.terminated)
+            self.assertTrue(any(event.get("message") == "first progress" for event in events))
+            self.assertTrue(any(event.get("message") == "second progress" for event in events))
+
+    def test_codex_idle_timeout_terminates_process_when_no_activity_arrives(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            events = []
+            clock = ManualClock()
+            process = PollingFakeProcess(return_after_polls=100)
+            terminated = []
+
+            executor = CodexExecExecutor(
+                project_root=os.getcwd(),
+                enabled=True,
+                timeout_seconds=30,
+                idle_timeout_seconds=5,
+                popen_factory=lambda args, **kwargs: process,
+                which=lambda command: command,
+                monotonic=clock.monotonic,
+                sleep=clock.sleep,
+                process_tree_terminator=lambda process: terminated.append(process.pid),
+            )
+            context = make_context("run-idle-timeout", os.path.join(tmpdir, "run-idle-timeout"), events)
+
+            with self.assertRaisesRegex(Exception, "idle timed out"):
+                executor.start(config=None, payload=self.payload(), context=context)
+
+            self.assertEqual(terminated, [1234])
+            self.assertTrue(any(
+                event["type"] == "runner_idle_timeout" and event["timeout_seconds"] == 5
+                for event in events
+            ))
 
     def test_codex_nonzero_exit_emits_failed_event(self):
         with tempfile.TemporaryDirectory() as tmpdir:

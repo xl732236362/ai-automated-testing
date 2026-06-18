@@ -153,8 +153,11 @@ class FakeServiceProcess:
 
 
 class FakeServiceStdin:
+    def __init__(self):
+        self.written = []
+
     def write(self, text):
-        pass
+        self.written.append(text)
 
     def flush(self):
         pass
@@ -171,7 +174,11 @@ class TestGameReverseWebService(unittest.TestCase):
         return GameReverseWebService(
             output_root=self.tmpdir.name,
             runner=self.runner,
-            executors=create_default_registry(self.runner, environ={}),
+            executors=create_default_registry(
+                self.runner,
+                environ={},
+                codex_which=lambda command: None,
+            ),
         )
 
     def wait_for_status(self, service, run_id, expected_status, timeout=2):
@@ -219,13 +226,20 @@ class TestGameReverseWebService(unittest.TestCase):
         self.assertTrue(health["runners"][0]["available"])
 
     def test_health_uses_executor_registry_metadata(self):
-        service = self.make_service()
+        service = GameReverseWebService(
+            runner=FakeRunner(),
+            executors=create_default_registry(
+                FakeRunner(),
+                environ={},
+                codex_which=lambda command: "C:/tools/codex.cmd",
+            ),
+        )
 
         health = service.health()
 
         runners = {runner["id"]: runner for runner in health["runners"]}
         self.assertTrue(runners["game_reverse"]["available"])
-        self.assertFalse(runners["codex_exec"]["available"])
+        self.assertTrue(runners["codex_exec"]["available"])
         self.assertFalse(runners["claude_print"]["available"])
 
     def test_lists_devices_through_discovery_boundary(self):
@@ -368,16 +382,19 @@ class TestGameReverseWebService(unittest.TestCase):
     def test_web_service_runs_enabled_codex_executor_with_fake_process(self):
         self.tmpdir = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmpdir.cleanup)
+        processes = []
 
         def fake_popen(args, **kwargs):
             final_path = args[args.index("--output-last-message") + 1]
             with open(final_path, "w", encoding="utf-8") as last_message:
                 last_message.write("Codex completed through service")
-            return FakeServiceProcess(
+            process = FakeServiceProcess(
                 stdout_lines=['{"type": "assistant_message", "message": "service event"}\n'],
                 stderr_lines=[],
                 returncode=0,
             )
+            processes.append(process)
+            return process
 
         codex_executor = CodexExecExecutor(
             project_root=os.getcwd(),
@@ -399,6 +416,10 @@ class TestGameReverseWebService(unittest.TestCase):
 
         self.assertEqual(completed["runner"], "codex_exec")
         self.assertTrue(os.path.exists(os.path.join(completed["session_dir"], "final_report.md")))
+        prompt = "".join(processes[0].stdin.written)
+        self.assertIn("Run ID: %s" % result["id"], prompt)
+        self.assertIn("Output directory: %s" % os.path.abspath(completed["session_dir"]), prompt)
+        self.assertIn("Do not create a sibling session directory", prompt)
         events = service.run_events(result["id"])
         self.assertTrue(any(event.get("message") == "service event" for event in events))
         report = service.session_report(result["id"])
