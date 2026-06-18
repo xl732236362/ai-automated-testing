@@ -15,11 +15,14 @@ const ACTION_LABELS = {
   error: "错误",
 };
 
+const UNSAFE_ACTIONS = ["tap", "swipe"];
+
 document.addEventListener("DOMContentLoaded", () => {
   const root = document.getElementById("app");
   const sampleUrl = root.dataset.sampleUrl;
 
   wireStartButton();
+  wireUnsafeActionToggle();
   Promise.all([loadSample(sampleUrl), detectBackend()])
     .then(([sample, health]) => {
       currentData = mergeBackendHealth(sample, health);
@@ -115,15 +118,21 @@ function renderRunners(runners) {
 
 function renderAllowedActions(actions) {
   const row = document.getElementById("allowed-actions");
+  const effectiveActions = getEffectiveAllowedActions({allowed_actions: actions || []});
   row.replaceChildren(
-    ...actions.map((action) => {
+    ...effectiveActions.map((action) => {
       const chip = document.createElement("span");
-      chip.className = ["tap", "swipe"].includes(action) ? "action-chip is-risky" : "action-chip";
+      chip.className = UNSAFE_ACTIONS.includes(action) ? "action-chip is-risky" : "action-chip";
       chip.textContent = ACTION_LABELS[action] || action;
-      chip.title = ["tap", "swipe"].includes(action) ? "需要后端显式启用" : "默认安全动作";
+      chip.title = UNSAFE_ACTIONS.includes(action) ? "已显式允许真实设备交互" : "默认安全动作";
       return chip;
     })
   );
+
+  const panel = document.getElementById("unsafe-actions-panel");
+  if (panel) {
+    panel.classList.toggle("is-enabled", getUnsafeActionsEnabled());
+  }
 }
 
 function renderTimeline(steps) {
@@ -201,6 +210,34 @@ function markStaticControls() {
     : "需要本地后端在线，并选择可用执行器。";
 }
 
+function wireUnsafeActionToggle() {
+  const toggle = document.getElementById("allow-unsafe-actions-input");
+  if (!toggle) {
+    return;
+  }
+  toggle.checked = false;
+  toggle.addEventListener("change", () => {
+    if (currentData) {
+      renderAllowedActions(currentData.config.allowed_actions);
+    }
+  });
+}
+
+function getUnsafeActionsEnabled() {
+  const toggle = document.getElementById("allow-unsafe-actions-input");
+  return Boolean(toggle && toggle.checked);
+}
+
+function getEffectiveAllowedActions(config) {
+  const baseActions = (config.allowed_actions || []).filter(
+    (action) => !UNSAFE_ACTIONS.includes(action)
+  );
+  if (!getUnsafeActionsEnabled()) {
+    return baseActions;
+  }
+  return Array.from(new Set([...baseActions, ...UNSAFE_ACTIONS]));
+}
+
 function wireStartButton() {
   const button = document.getElementById("start-run-button");
   button.addEventListener("click", () => {
@@ -232,7 +269,7 @@ function startRun() {
     })
     .catch((error) => {
       setRunState("运行失败", error.message);
-      button.disabled = false;
+      markStaticControls();
     });
 }
 
@@ -373,10 +410,10 @@ function buildRunPayload(config) {
       goal: readInputValue("mission-goal", config.mission.goal || ""),
     },
     model: readInputValue("model-input", config.model || ""),
-    allowed_actions: config.allowed_actions,
+    allowed_actions: getEffectiveAllowedActions(config),
     recent_steps: config.recent_steps,
     consecutive_failure_limit: config.consecutive_failure_limit,
-    enable_unsafe_actions: false,
+    enable_unsafe_actions: getUnsafeActionsEnabled(),
   };
 }
 
