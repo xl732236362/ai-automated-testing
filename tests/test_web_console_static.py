@@ -39,9 +39,16 @@ class TestWebConsoleStatic(unittest.TestCase):
         self.assertIn('id="max-steps-input"', html)
         self.assertIn('id="mission-goal"', html)
         self.assertIn('id="allow-unsafe-actions-input"', html)
+        self.assertIn('id="detect-devices-button"', html)
+        self.assertIn('id="use-foreground-app-button"', html)
+        self.assertIn('id="validate-target-button"', html)
+        self.assertIn('id="target-config-status"', html)
         self.assertIn("交互权限", html)
         self.assertIn("允许点击/滑动", html)
         self.assertIn("App/Game 探索控制台", html)
+        self.assertIn("检测设备", html)
+        self.assertIn("使用当前前台应用", html)
+        self.assertIn("校验配置", html)
 
     def test_sample_run_json_has_required_shape(self):
         data = json.loads((WEB_DIR / "data" / "sample-run.json").read_text(encoding="utf-8"))
@@ -78,6 +85,11 @@ class TestWebConsoleStatic(unittest.TestCase):
         self.assertIn("getUnsafeActionsEnabled", script)
         self.assertIn("getEffectiveAllowedActions", script)
         self.assertIn("wireUnsafeActionToggle", script)
+        self.assertIn("/api/devices", script)
+        self.assertIn("wireTargetConfigControls", script)
+        self.assertIn("detectDevices", script)
+        self.assertIn("useForegroundApp", script)
+        self.assertIn("validateTargetConfig", script)
         self.assertRegex(script, r"enable_unsafe_actions:\s*getUnsafeActionsEnabled\(\)")
         self.assertIn('const UNSAFE_ACTIONS = ["tap", "swipe"];', script)
         self.assertNotIn("enable_unsafe_actions: true", script)
@@ -95,8 +107,12 @@ class TestWebConsoleStatic(unittest.TestCase):
         self.assertIn("允许点击/滑动", html)
         self.assertIn("真实点击或滑动", html)
         self.assertIn("开始运行", html)
+        self.assertIn("检测设备", html)
+        self.assertIn("使用当前前台应用", html)
+        self.assertIn("校验配置", html)
         self.assertIn("后端在线", script)
         self.assertIn("运行完成", script)
+        self.assertIn("未检测设备", script)
 
 
 if __name__ == "__main__":
