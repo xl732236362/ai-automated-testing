@@ -16,8 +16,8 @@
 - Modify `web/index.html`: add the visible `allow-unsafe-actions-input` checkbox and Chinese warning text to the existing Safety panel.
 - Modify `web/app.js`: add unsafe-action state helpers, re-render action chips when the checkbox changes, and build POST payloads from effective actions.
 - Modify `web/styles.css`: add compact styling for the permission toggle and warning state.
+- Modify `web/data/sample-run.json`: keep the static preview action steps safe-only after review.
 - Do not modify `game_reverse/web_service.py`: it already enforces `enable_unsafe_actions`.
-- Do not modify `web/data/sample-run.json`: it must remain safe-only by default.
 - Modify this plan file as tasks are executed, marking only completed steps as `[x]`.
 
 ## Task 1: Static Test Contract
@@ -25,7 +25,7 @@
 **Files:**
 - Modify: `tests/test_web_console_static.py`
 
-- [ ] **Step 1: Add failing HTML assertions**
+- [x] **Step 1: Add failing HTML assertions**
 
 Update `test_index_wires_assets_and_sample_data` by adding these assertions after the existing mission input ID checks:
 
@@ -35,7 +35,7 @@ Update `test_index_wires_assets_and_sample_data` by adding these assertions afte
         self.assertIn("允许点击/滑动", html)
 ```
 
-- [ ] **Step 2: Add failing sample safety assertions**
+- [x] **Step 2: Add failing sample safety assertions**
 
 In `test_sample_run_json_has_required_shape`, keep the existing safe-only assertion and add explicit exclusions:
 
@@ -47,7 +47,7 @@ In `test_sample_run_json_has_required_shape`, keep the existing safe-only assert
 
 If the exact safe-only assertion already exists, add only the two `assertNotIn` lines.
 
-- [ ] **Step 3: Add failing JavaScript opt-in assertions**
+- [x] **Step 3: Add failing JavaScript opt-in assertions**
 
 Update `test_app_declares_static_only_boundary` so it requires the new helper names and dynamic payload:
 
@@ -68,7 +68,7 @@ Keep these existing safety assertions:
         self.assertNotIn("claude -p", script)
 ```
 
-- [ ] **Step 4: Update Chinese readability assertions**
+- [x] **Step 4: Update Chinese readability assertions**
 
 Update `test_touched_web_files_use_readable_chinese` to include:
 
@@ -78,7 +78,7 @@ Update `test_touched_web_files_use_readable_chinese` to include:
         self.assertIn("真实点击或滑动", html)
 ```
 
-- [ ] **Step 5: Run RED**
+- [x] **Step 5: Run RED**
 
 Run:
 
@@ -93,7 +93,7 @@ Expected: fail because `allow-unsafe-actions-input`, `getUnsafeActionsEnabled`, 
 **Files:**
 - Modify: `web/index.html`
 
-- [ ] **Step 1: Add the permission toggle markup**
+- [x] **Step 1: Add the permission toggle markup**
 
 Inside the existing `<section id="safety" class="panel">`, insert this block immediately after:
 
@@ -117,7 +117,7 @@ Add:
 
 Do not add manual tap or swipe buttons.
 
-- [ ] **Step 2: Update Safety panel title if needed**
+- [x] **Step 2: Update Safety panel title if needed**
 
 Ensure the Safety panel contains readable Chinese:
 
@@ -131,7 +131,7 @@ Leave the existing action chips container ID unchanged:
 id="allowed-actions"
 ```
 
-- [ ] **Step 3: Run HTML-focused tests**
+- [x] **Step 3: Run HTML-focused tests**
 
 Run:
 
@@ -146,7 +146,7 @@ Expected: HTML assertions pass; JavaScript opt-in assertions still fail.
 **Files:**
 - Modify: `web/app.js`
 
-- [ ] **Step 1: Define unsafe action constants**
+- [x] **Step 1: Define unsafe action constants**
 
 Near `ACTION_LABELS`, add:
 
@@ -154,7 +154,7 @@ Near `ACTION_LABELS`, add:
 const UNSAFE_ACTIONS = ["tap", "swipe"];
 ```
 
-- [ ] **Step 2: Wire the toggle on DOM ready**
+- [x] **Step 2: Wire the toggle on DOM ready**
 
 In the `DOMContentLoaded` handler, after `wireStartButton();`, add:
 
@@ -182,7 +182,7 @@ document.addEventListener("DOMContentLoaded", () => {
 });
 ```
 
-- [ ] **Step 3: Add toggle helper functions**
+- [x] **Step 3: Add toggle helper functions**
 
 Add these functions before `wireStartButton()`:
 
@@ -216,7 +216,7 @@ function getEffectiveAllowedActions(config) {
 }
 ```
 
-- [ ] **Step 4: Render effective action chips**
+- [x] **Step 4: Render effective action chips**
 
 Replace the body of `renderAllowedActions(actions)` with:
 
@@ -241,7 +241,7 @@ function renderAllowedActions(actions) {
 }
 ```
 
-- [ ] **Step 5: Build payload from effective actions**
+- [x] **Step 5: Build payload from effective actions**
 
 In `buildRunPayload(config)`, replace:
 
@@ -267,7 +267,7 @@ with:
     enable_unsafe_actions: getUnsafeActionsEnabled(),
 ```
 
-- [ ] **Step 6: Keep failed start state consistent**
+- [x] **Step 6: Keep failed start state consistent**
 
 In the `startRun()` `.catch()` block, replace:
 
@@ -283,7 +283,7 @@ with:
 
 This preserves the existing runner/backend gating after validation failures.
 
-- [ ] **Step 7: Run JS/static GREEN**
+- [x] **Step 7: Run JS/static GREEN**
 
 Run:
 
@@ -299,7 +299,7 @@ Expected: both pass.
 **Files:**
 - Modify: `web/styles.css`
 
-- [ ] **Step 1: Add permission toggle styles**
+- [x] **Step 1: Add permission toggle styles**
 
 Add these rules near `.actions-row` and `.safety-copy`:
 
@@ -325,7 +325,7 @@ Add these rules near `.actions-row` and `.safety-copy`:
   color: var(--text);
 }
 
-.toggle-row input {
+.toggle-row input[type="checkbox"] {
   width: 16px;
   height: 16px;
   min-height: 16px;
@@ -351,7 +351,7 @@ Add these rules near `.actions-row` and `.safety-copy`:
 }
 ```
 
-- [ ] **Step 2: Run style/static checks**
+- [x] **Step 2: Run style/static checks**
 
 Run:
 
@@ -368,7 +368,7 @@ Expected: tests pass, JS syntax passes, no whitespace errors.
 **Files:**
 - Verify only unless failures reveal a real defect.
 
-- [ ] **Step 1: Start or reuse local backend**
+- [x] **Step 1: Start or reuse local backend**
 
 If no server is running on port `8768`, start one:
 
@@ -379,7 +379,7 @@ python -m game_reverse.web_server --host 127.0.0.1 --port 8768
 
 If a server is already running, reuse it.
 
-- [ ] **Step 2: Verify backend still rejects unsafe actions without opt-in**
+- [x] **Step 2: Verify backend still rejects unsafe actions without opt-in**
 
 Run:
 
@@ -410,7 +410,7 @@ Expected output includes:
 enable_unsafe_actions is required for tap or swipe
 ```
 
-- [ ] **Step 3: Verify backend accepts unsafe actions with opt-in**
+- [x] **Step 3: Verify backend accepts unsafe actions with opt-in**
 
 Run:
 
@@ -440,9 +440,10 @@ Expected: JSON object with fields including `id`, `runner`, and `status`. Becaus
 - Modify: `web/app.js`
 - Modify: `web/styles.css`
 - Modify: `tests/test_web_console_static.py`
+- Modify: `web/data/sample-run.json`
 - Modify: `docs/superpowers/plans/2026-06-18-web-unsafe-action-opt-in.md`
 
-- [ ] **Step 1: Run final relevant tests**
+- [x] **Step 1: Run final relevant tests**
 
 Run:
 
@@ -460,7 +461,7 @@ Expected:
 - `git diff --check` prints no whitespace errors.
 - Only intended files are modified.
 
-- [ ] **Step 2: Mark executed plan checkboxes**
+- [x] **Step 2: Mark executed plan checkboxes**
 
 Mark only completed steps as `[x]` in this plan file.
 
@@ -469,7 +470,7 @@ Mark only completed steps as `[x]` in this plan file.
 Run:
 
 ```powershell
-git add web/index.html web/app.js web/styles.css tests/test_web_console_static.py docs/superpowers/plans/2026-06-18-web-unsafe-action-opt-in.md
+git add web/index.html web/app.js web/styles.css web/data/sample-run.json tests/test_web_console_static.py docs/superpowers/plans/2026-06-18-web-unsafe-action-opt-in.md
 git commit -m "Add web unsafe action opt-in"
 ```
 
