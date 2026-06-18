@@ -20,6 +20,26 @@ class FakeService:
     def config(self):
         return {"output_root": "game_reverse/outputs/sessions"}
 
+    def list_devices(self):
+        return {"devices": [{"id": "emulator-5554", "uri": "Android:///emulator-5554"}]}
+
+    def foreground_app(self, device_id):
+        return {
+            "device_id": device_id,
+            "package_name": "com.redlinegames.matchsniper3d",
+            "activity": "com.unity3d.player.UnityPlayerActivity",
+        }
+
+    def package_validation(self, device_id, package_name):
+        return {
+            "device_id": device_id,
+            "package_name": package_name,
+            "installed": True,
+            "launchable": True,
+            "activity": "com.unity3d.player.UnityPlayerActivity",
+            "warnings": [],
+        }
+
     def start_run(self, payload):
         self.payloads.append(payload)
         return {"id": "fake-run", "status": "completed", "session_dir": "fake-session"}
@@ -76,6 +96,25 @@ class TestGameReverseWebServer(unittest.TestCase):
 
         self.assertEqual(result["status"], "ok")
         self.assertEqual(result["runners"][0]["id"], "game_reverse")
+
+    def test_devices_endpoint_returns_json(self):
+        result = self.get_json("/api/devices")
+
+        self.assertEqual(result["devices"][0]["id"], "emulator-5554")
+
+    def test_foreground_endpoint_returns_json(self):
+        result = self.get_json("/api/devices/emulator-5554/foreground")
+
+        self.assertEqual(result["device_id"], "emulator-5554")
+        self.assertEqual(result["package_name"], "com.redlinegames.matchsniper3d")
+
+    def test_package_validation_endpoint_returns_json(self):
+        result = self.get_json(
+            "/api/devices/emulator-5554/packages/com.redlinegames.matchsniper3d/validation"
+        )
+
+        self.assertTrue(result["launchable"])
+        self.assertEqual(result["activity"], "com.unity3d.player.UnityPlayerActivity")
 
     def test_post_run_passes_payload_to_service(self):
         payload = {"runner": "game_reverse", "package_name": "com.example.game"}

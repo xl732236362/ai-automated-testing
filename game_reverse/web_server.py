@@ -32,6 +32,12 @@ def create_handler(service=None, web_root=None):
                     self._send_json(service.health())
                 elif path == "/api/config":
                     self._send_json(service.config())
+                elif path == "/api/devices":
+                    self._send_json(service.list_devices())
+                elif path.startswith("/api/devices/") and path.endswith("/foreground"):
+                    self._handle_get_foreground(path)
+                elif path.startswith("/api/devices/") and path.endswith("/validation"):
+                    self._handle_get_package_validation(path)
                 elif path.startswith("/api/runs/") and path.endswith("/events"):
                     self._handle_get_run_events(path)
                 elif path.startswith("/api/runs/"):
@@ -81,6 +87,27 @@ def create_handler(service=None, web_root=None):
                 self._send_error(404, "not found")
                 return
             self._send_json({"id": run_id, "events": service.run_events(run_id)})
+
+        def _handle_get_foreground(self, path):
+            device_id = unquote(path[len("/api/devices/") : -len("/foreground")])
+            if not device_id:
+                self._send_error(404, "not found")
+                return
+            self._send_json(service.foreground_app(device_id))
+
+        def _handle_get_package_validation(self, path):
+            prefix = "/api/devices/"
+            suffix = "/validation"
+            middle = path[len(prefix) : -len(suffix)]
+            marker = "/packages/"
+            if marker not in middle:
+                self._send_error(404, "not found")
+                return
+            device_id, package_name = middle.split(marker, 1)
+            if not device_id or not package_name:
+                self._send_error(404, "not found")
+                return
+            self._send_json(service.package_validation(unquote(device_id), unquote(package_name)))
 
         def _send_static(self, path):
             relative = unquote(path[len("/web/") :])
