@@ -29,7 +29,7 @@
 **Files:**
 - Create: `tests/test_game_reverse_target_discovery.py`
 
-- [ ] **Step 1: Create failing parser and validation tests**
+- [x] **Step 1: Create failing parser and validation tests**
 
 Create `tests/test_game_reverse_target_discovery.py` with:
 
@@ -164,7 +164,7 @@ if __name__ == "__main__":
     unittest.main()
 ```
 
-- [ ] **Step 2: Run RED**
+- [x] **Step 2: Run RED**
 
 Run:
 
@@ -180,7 +180,7 @@ Expected: fail with `ModuleNotFoundError: No module named 'game_reverse.target_d
 - Create: `game_reverse/target_discovery.py`
 - Modify: `tests/test_game_reverse_target_discovery.py`
 
-- [ ] **Step 1: Implement minimal parsing and validation module**
+- [x] **Step 1: Implement minimal parsing and validation module**
 
 Create `game_reverse/target_discovery.py`:
 
@@ -362,7 +362,7 @@ def _parse_resolved_activity(package_name, output):
     return ""
 ```
 
-- [ ] **Step 2: Run GREEN**
+- [x] **Step 2: Run GREEN**
 
 Run:
 
@@ -372,7 +372,7 @@ python -m unittest tests.test_game_reverse_target_discovery
 
 Expected: all tests pass.
 
-- [ ] **Step 3: Add fake-runner behavior tests**
+- [x] **Step 3: Add fake-runner behavior tests**
 
 Append these tests to `TestTargetDiscoveryParsing` before the `if __name__ == "__main__":` block:
 
@@ -416,7 +416,7 @@ Append these tests to `TestTargetDiscoveryParsing` before the `if __name__ == "_
         self.assertIn(["devices"], runner.calls)
 ```
 
-- [ ] **Step 4: Run target discovery tests**
+- [x] **Step 4: Run target discovery tests**
 
 Run:
 
@@ -426,7 +426,7 @@ python -m unittest tests.test_game_reverse_target_discovery
 
 Expected: all tests pass.
 
-- [ ] **Step 5: Commit target discovery module**
+- [x] **Step 5: Commit target discovery module**
 
 Run:
 
@@ -443,7 +443,7 @@ Expected: commit succeeds.
 - Modify: `game_reverse/web_service.py`
 - Modify: `tests/test_game_reverse_web_service.py`
 
-- [ ] **Step 1: Add failing service tests**
+- [x] **Step 1: Add failing service tests**
 
 In `tests/test_game_reverse_web_service.py`, add this fake after `FakeRunner`:
 
@@ -523,7 +523,7 @@ Add these tests to `TestGameReverseWebService`:
         )
 ```
 
-- [ ] **Step 2: Run RED**
+- [x] **Step 2: Run RED**
 
 Run:
 
@@ -533,7 +533,7 @@ python -m unittest tests.test_game_reverse_web_service
 
 Expected: fail because `GameReverseWebService.__init__()` does not accept `target_discovery`.
 
-- [ ] **Step 3: Implement service methods**
+- [x] **Step 3: Implement service methods**
 
 In `game_reverse/web_service.py`, add import:
 
@@ -577,7 +577,7 @@ Add public methods after `config()`:
             raise ValidationError(str(exc))
 ```
 
-- [ ] **Step 4: Run service tests**
+- [x] **Step 4: Run service tests**
 
 Run:
 
@@ -587,7 +587,7 @@ python -m unittest tests.test_game_reverse_web_service
 
 Expected: all tests pass.
 
-- [ ] **Step 5: Commit service integration**
+- [x] **Step 5: Commit service integration**
 
 Run:
 
@@ -604,7 +604,7 @@ Expected: commit succeeds.
 - Modify: `game_reverse/web_server.py`
 - Modify: `tests/test_game_reverse_web_server.py`
 
-- [ ] **Step 1: Add failing HTTP route tests**
+- [x] **Step 1: Add failing HTTP route tests**
 
 Add these methods to `FakeService` in `tests/test_game_reverse_web_server.py`:
 
@@ -653,7 +653,7 @@ Add tests to `TestGameReverseWebServer`:
         self.assertEqual(result["activity"], "com.unity3d.player.UnityPlayerActivity")
 ```
 
-- [ ] **Step 2: Run RED**
+- [x] **Step 2: Run RED**
 
 Run:
 
@@ -663,7 +663,7 @@ python -m unittest tests.test_game_reverse_web_server
 
 Expected: the three new tests fail with `HTTP Error 404`.
 
-- [ ] **Step 3: Add route handling**
+- [x] **Step 3: Add route handling**
 
 In `game_reverse/web_server.py`, add the new routes before the generic `/api/runs/` route:
 
@@ -701,7 +701,7 @@ Add handler methods after `_handle_get_run_events`:
             self._send_json(service.package_validation(unquote(device_id), unquote(package_name)))
 ```
 
-- [ ] **Step 4: Run HTTP tests**
+- [x] **Step 4: Run HTTP tests**
 
 Run:
 
@@ -711,7 +711,7 @@ python -m unittest tests.test_game_reverse_web_server
 
 Expected: all tests pass.
 
-- [ ] **Step 5: Commit HTTP routes**
+- [x] **Step 5: Commit HTTP routes**
 
 Run:
 
@@ -727,7 +727,7 @@ Expected: commit succeeds.
 **Files:**
 - Modify: `tests/test_web_console_static.py`
 
-- [ ] **Step 1: Add failing HTML and JS assertions**
+- [x] **Step 1: Add failing HTML and JS assertions**
 
 In `test_index_wires_assets_and_sample_data`, add:
 
@@ -760,7 +760,7 @@ In `test_touched_web_files_use_readable_chinese`, add:
         self.assertIn("未检测设备", script)
 ```
 
-- [ ] **Step 2: Run RED**
+- [x] **Step 2: Run RED**
 
 Run:
 
@@ -775,7 +775,7 @@ Expected: fail because the HTML buttons and JavaScript functions do not exist ye
 **Files:**
 - Modify: `web/index.html`
 
-- [ ] **Step 1: Add smart config controls under the edit grid**
+- [x] **Step 1: Add smart config controls under the edit grid**
 
 Immediately after:
 
@@ -798,7 +798,7 @@ where the closing `</div>` belongs to `<div class="edit-grid" id="config-grid">`
 
 Do not remove the existing `device-uri-input` or `package-name-input`.
 
-- [ ] **Step 2: Run HTML-focused tests**
+- [x] **Step 2: Run HTML-focused tests**
 
 Run:
 
@@ -808,7 +808,7 @@ python -m unittest tests.test_web_console_static
 
 Expected: HTML assertions pass; JavaScript function assertions still fail.
 
-- [ ] **Step 3: Keep HTML changes uncommitted for the JS task**
+- [x] **Step 3: Keep HTML changes uncommitted for the JS task**
 
 Do not commit after this task. The static test contract intentionally remains red until Task 7 adds the JavaScript functions. Keep `web/index.html` and `tests/test_web_console_static.py` in the working tree for Task 7.
 
@@ -819,7 +819,7 @@ Expected: `git status --short` shows modified `web/index.html` and `tests/test_w
 **Files:**
 - Modify: `web/app.js`
 
-- [ ] **Step 1: Wire smart target buttons on DOM ready**
+- [x] **Step 1: Wire smart target buttons on DOM ready**
 
 In the `DOMContentLoaded` handler, after `wireUnsafeActionToggle();`, add:
 
@@ -827,7 +827,7 @@ In the `DOMContentLoaded` handler, after `wireUnsafeActionToggle();`, add:
   wireTargetConfigControls();
 ```
 
-- [ ] **Step 2: Add target config functions before `wireStartButton()`**
+- [x] **Step 2: Add target config functions before `wireStartButton()`**
 
 Add:
 
@@ -944,7 +944,7 @@ function setTargetConfigStatus(message, tone) {
 }
 ```
 
-- [ ] **Step 3: Disable smart buttons when backend is offline**
+- [x] **Step 3: Disable smart buttons when backend is offline**
 
 In `updateBackendStatus()`, after setting `status.title`, add:
 
@@ -965,7 +965,7 @@ function updateTargetConfigControls() {
 }
 ```
 
-- [ ] **Step 4: Run JS/static tests**
+- [x] **Step 4: Run JS/static tests**
 
 Run:
 
@@ -976,7 +976,7 @@ python -m unittest tests.test_web_console_static
 
 Expected: both pass.
 
-- [ ] **Step 5: Commit JavaScript behavior**
+- [x] **Step 5: Commit JavaScript behavior**
 
 Run:
 
@@ -992,7 +992,7 @@ Expected: commit succeeds.
 **Files:**
 - Modify: `web/styles.css`
 
-- [ ] **Step 1: Add compact target tool styles**
+- [x] **Step 1: Add compact target tool styles**
 
 Add near `.edit-grid` or existing form styles:
 
@@ -1053,7 +1053,7 @@ Add near `.edit-grid` or existing form styles:
 }
 ```
 
-- [ ] **Step 2: Run style/static checks**
+- [x] **Step 2: Run style/static checks**
 
 Run:
 
@@ -1065,7 +1065,7 @@ git diff --check
 
 Expected: tests pass, JS syntax passes, no whitespace errors.
 
-- [ ] **Step 3: Commit styles**
+- [x] **Step 3: Commit styles**
 
 Run:
 
@@ -1081,7 +1081,7 @@ Expected: commit succeeds.
 **Files:**
 - Modify: this plan file only for checkbox status.
 
-- [ ] **Step 1: Run final automated tests**
+- [x] **Step 1: Run final automated tests**
 
 Run:
 
@@ -1099,7 +1099,7 @@ Expected:
 - `git diff --check` prints no whitespace errors.
 - Only this plan file is modified if all code tasks have already committed.
 
-- [ ] **Step 2: Smoke against the local backend if port 8768 is running**
+- [x] **Step 2: Smoke against the local backend if port 8768 is running**
 
 Run:
 
@@ -1119,11 +1119,18 @@ Expected when the game is foreground: JSON contains `package_name` such as `com.
 
 If no emulator is online, record the exact error and keep the automated tests as the verification source.
 
-- [ ] **Step 3: Mark executed checkboxes**
+Smoke record:
+- `http://127.0.0.1:8768` was already occupied by an older server process without the new discovery routes.
+- Started this worktree's server on `http://127.0.0.1:8769` for verification.
+- `/api/devices` returned online device `emulator-5554`.
+- `/api/devices/emulator-5554/foreground` returned `com.redlinegames.matchsniper3d` and `com.unity3d.player.UnityPlayerActivity`.
+- `/api/devices/emulator-5554/packages/com.redlinegames.matchsniper3d/validation` returned `installed: true` and `launchable: true`.
+
+- [x] **Step 3: Mark executed checkboxes**
 
 Mark only completed steps as `[x]` in this plan file.
 
-- [ ] **Step 4: Commit plan status**
+- [x] **Step 4: Commit plan status**
 
 Run:
 
