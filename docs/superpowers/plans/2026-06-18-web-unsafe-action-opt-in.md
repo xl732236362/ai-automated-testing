@@ -465,7 +465,7 @@ Expected:
 
 Mark only completed steps as `[x]` in this plan file.
 
-- [ ] **Step 3: Commit implementation**
+- [x] **Step 3: Commit implementation**
 
 Run:
 
