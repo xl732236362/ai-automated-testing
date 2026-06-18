@@ -9,6 +9,7 @@ from game_reverse.config import DEFAULT_ALLOWED_ACTIONS, DEFAULT_MODEL, GameReve
 from game_reverse.executors import ExecutorError, ExecutorRunContext, create_default_registry
 from game_reverse.mission import parse_mission
 from game_reverse.run_loop import run_loop
+from game_reverse.target_discovery import TargetDiscovery, TargetDiscoveryError
 
 
 UNSAFE_ACTIONS = {"tap", "swipe"}
@@ -19,10 +20,11 @@ class ValidationError(ValueError):
 
 
 class GameReverseWebService:
-    def __init__(self, output_root=None, runner=None, executors=None):
+    def __init__(self, output_root=None, runner=None, executors=None, target_discovery=None):
         self.output_root = output_root or "game_reverse/outputs/sessions"
         self.runner = runner or run_loop
         self.executors = executors or create_default_registry(self.runner)
+        self.target_discovery = target_discovery or TargetDiscovery()
         self.runs = {}
         self.events = {}
         self.lock = threading.Lock()
@@ -41,6 +43,24 @@ class GameReverseWebService:
             "default_allowed_actions": list(DEFAULT_ALLOWED_ACTIONS),
             "unsafe_actions": sorted(UNSAFE_ACTIONS),
         }
+
+    def list_devices(self):
+        try:
+            return {"devices": self.target_discovery.list_devices()}
+        except TargetDiscoveryError as exc:
+            raise ValidationError(str(exc))
+
+    def foreground_app(self, device_id):
+        try:
+            return self.target_discovery.foreground_app(device_id)
+        except TargetDiscoveryError as exc:
+            raise ValidationError(str(exc))
+
+    def package_validation(self, device_id, package_name):
+        try:
+            return self.target_discovery.package_validation(device_id, package_name)
+        except TargetDiscoveryError as exc:
+            raise ValidationError(str(exc))
 
     def start_run(self, payload):
         if not isinstance(payload, dict):

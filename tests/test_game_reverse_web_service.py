@@ -8,6 +8,7 @@ import time
 import unittest
 
 from game_reverse.executors import CodexExecExecutor, ExecutorRegistry, create_default_registry
+from game_reverse.target_discovery import TargetDiscoveryError
 from game_reverse.web_service import GameReverseWebService, ValidationError
 
 
@@ -23,6 +24,46 @@ class FakeRunner:
         with open(os.path.join(session_dir, "final_report.md"), "w", encoding="utf-8") as report:
             report.write("# Report\n")
         return session_dir
+
+
+class FakeDiscovery:
+    def __init__(self):
+        self.calls = []
+
+    def list_devices(self):
+        self.calls.append(("list_devices",))
+        return [{"id": "emulator-5554", "uri": "Android:///emulator-5554"}]
+
+    def foreground_app(self, device_id):
+        self.calls.append(("foreground_app", device_id))
+        return {
+            "device_id": device_id,
+            "package_name": "com.redlinegames.matchsniper3d",
+            "activity": "com.unity3d.player.UnityPlayerActivity",
+            "source": "dumpsys activity activities",
+        }
+
+    def package_validation(self, device_id, package_name):
+        self.calls.append(("package_validation", device_id, package_name))
+        return {
+            "device_id": device_id,
+            "package_name": package_name,
+            "installed": True,
+            "launchable": True,
+            "activity": "com.unity3d.player.UnityPlayerActivity",
+            "warnings": [],
+        }
+
+
+class FailingDiscovery(FakeDiscovery):
+    def list_devices(self):
+        raise TargetDiscoveryError("adb command not found")
+
+    def foreground_app(self, device_id):
+        raise TargetDiscoveryError("foreground app not found")
+
+    def package_validation(self, device_id, package_name):
+        raise TargetDiscoveryError("invalid package name")
 
 
 class SlowFakeRunner:
@@ -149,6 +190,62 @@ class TestGameReverseWebService(unittest.TestCase):
         self.assertTrue(runners["game_reverse"]["available"])
         self.assertFalse(runners["codex_exec"]["available"])
         self.assertFalse(runners["claude_print"]["available"])
+
+    def test_lists_devices_through_discovery_boundary(self):
+        discovery = FakeDiscovery()
+        service = GameReverseWebService(
+            runner=FakeRunner(),
+            executors=create_default_registry(FakeRunner(), environ={}),
+            target_discovery=discovery,
+        )
+
+        result = service.list_devices()
+
+        self.assertEqual(result["devices"][0]["id"], "emulator-5554")
+        self.assertEqual(discovery.calls, [("list_devices",)])
+
+    def test_reads_foreground_app_through_discovery_boundary(self):
+        discovery = FakeDiscovery()
+        service = GameReverseWebService(
+            runner=FakeRunner(),
+            executors=create_default_registry(FakeRunner(), environ={}),
+            target_discovery=discovery,
+        )
+
+        result = service.foreground_app("emulator-5554")
+
+        self.assertEqual(result["package_name"], "com.redlinegames.matchsniper3d")
+        self.assertEqual(discovery.calls, [("foreground_app", "emulator-5554")])
+
+    def test_validates_package_through_discovery_boundary(self):
+        discovery = FakeDiscovery()
+        service = GameReverseWebService(
+            runner=FakeRunner(),
+            executors=create_default_registry(FakeRunner(), environ={}),
+            target_discovery=discovery,
+        )
+
+        result = service.package_validation("emulator-5554", "com.redlinegames.matchsniper3d")
+
+        self.assertTrue(result["launchable"])
+        self.assertEqual(
+            discovery.calls,
+            [("package_validation", "emulator-5554", "com.redlinegames.matchsniper3d")],
+        )
+
+    def test_converts_target_discovery_errors_to_validation_errors(self):
+        service = GameReverseWebService(
+            runner=FakeRunner(),
+            executors=create_default_registry(FakeRunner(), environ={}),
+            target_discovery=FailingDiscovery(),
+        )
+
+        with self.assertRaisesRegex(ValidationError, "adb command not found"):
+            service.list_devices()
+        with self.assertRaisesRegex(ValidationError, "foreground app not found"):
+            service.foreground_app("emulator-5554")
+        with self.assertRaisesRegex(ValidationError, "invalid package name"):
+            service.package_validation("emulator-5554", "invalid package")
 
     def test_start_run_validates_and_invokes_game_reverse_runner(self):
         service = self.make_service()
