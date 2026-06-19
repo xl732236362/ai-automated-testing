@@ -13,6 +13,7 @@ from game_reverse.config import load_config
 from game_reverse.feedback import classify_feedback, recommend_next_strategy
 from game_reverse.journal import Journal
 from game_reverse.llm_decider import ClaudeDecider
+from game_reverse.memory import ProfileStore
 from game_reverse.report_writer import update_mission_draft, write_final_report
 from game_reverse.state_graph import StateGraph
 
@@ -22,6 +23,7 @@ def run_loop(config, executor=None, decider=None, session_name=None, context=Non
     decider = decider or ClaudeDecider(config.model)
     session_name = session_name or time.strftime("%Y%m%d-%H%M%S")
     journal = Journal.create(config.output_root, session_name)
+    profile_store = _create_profile_store(config)
     _emit_context_event(
         context,
         "session_started",
@@ -142,6 +144,16 @@ def run_loop(config, executor=None, decider=None, session_name=None, context=Non
             journal.write_state_transition(transition)
             journal.write_state_map(state_graph.to_state_map())
             journal.write_affordances(affordance_memory.to_affordances())
+            _update_profile(
+                profile_store,
+                session_name,
+                state_graph,
+                affordance_memory,
+                observation_record,
+                action_record,
+                transition,
+                feedback,
+            )
             journal.update_mission_draft(update_mission_draft(mission_draft, step, decision))
             _emit_context_event(
                 context,
@@ -201,6 +213,9 @@ def run_loop(config, executor=None, decider=None, session_name=None, context=Non
     )
     journal.write_state_map(state_graph.to_state_map())
     journal.write_affordances(affordance_memory.to_affordances())
+    if profile_store is not None:
+        profile_store.update_json("state_map.json", state_graph.to_state_map())
+        profile_store.update_json("affordances.json", affordance_memory.to_affordances())
     _emit_context_event(
         context,
         "run_report_written",
@@ -216,6 +231,67 @@ def _emit_context_event(context, event_type, **extra):
     emit_event = getattr(context, "emit_event", None)
     if emit_event is not None:
         emit_event(event_type, **extra)
+
+
+def _create_profile_store(config):
+    if not getattr(config, "profile_enabled", True):
+        return None
+    store = ProfileStore(config.profile_root, config.package_name)
+    return store.initialize(package_name=config.package_name)
+
+
+def _update_profile(
+    profile_store,
+    session_name,
+    state_graph,
+    affordance_memory,
+    observation_record,
+    action_record,
+    transition,
+    feedback,
+):
+    if profile_store is None:
+        return
+    profile_store.update_json("state_map.json", state_graph.to_state_map())
+    profile_store.update_json("affordances.json", affordance_memory.to_affordances())
+    profile_store.update_json(
+        "safety_rules.json",
+        _profile_safety_rules(profile_store, observation_record, feedback),
+    )
+    profile_store.append_memory(
+        {
+            "event": "step",
+            "session_name": session_name,
+            "step": observation_record["step"],
+            "state_id": observation_record.get("state_id"),
+            "action": action_record.get("action"),
+            "feedback_result": feedback.get("result"),
+            "transition": transition,
+            "screen": observation_record.get("screen"),
+        }
+    )
+
+
+def _profile_safety_rules(profile_store, observation_record, feedback):
+    safety_rules = profile_store.load_json(
+        "safety_rules.json",
+        {"version": 1, "sensitive_states": [], "interventions": []},
+    )
+    safety_rules.setdefault("version", 1)
+    safety_rules.setdefault("sensitive_states", [])
+    safety_rules.setdefault("interventions", [])
+    if feedback.get("result") == "sensitive_screen":
+        state_id = observation_record.get("state_id")
+        if state_id and state_id not in safety_rules["sensitive_states"]:
+            safety_rules["sensitive_states"].append(state_id)
+        safety_rules["interventions"].append(
+            {
+                "step": observation_record.get("step"),
+                "state_id": state_id,
+                "reason": feedback.get("evidence", ""),
+            }
+        )
+    return safety_rules
 
 
 def _read_screen_size(screen_path):

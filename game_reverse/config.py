@@ -18,6 +18,8 @@ class GameReverseConfig:
     mission: Mission = field(default_factory=Mission)
     model: str = DEFAULT_MODEL
     output_root: str = "game_reverse/outputs/sessions"
+    profile_root: str = "game_reverse/profiles"
+    profile_enabled: bool = True
     allowed_actions: list = field(default_factory=lambda: list(DEFAULT_ALLOWED_ACTIONS))
     recent_steps: int = 5
     llm_retry_count: int = 1
@@ -43,6 +45,8 @@ def load_config(path):
         mission=parse_mission(raw.get("mission")),
         model=raw.get("model", DEFAULT_MODEL),
         output_root=raw.get("output_root", "game_reverse/outputs/sessions"),
+        profile_root=raw.get("profile_root", "game_reverse/profiles"),
+        profile_enabled=raw.get("profile_enabled", True),
         allowed_actions=list(raw.get("allowed_actions", DEFAULT_ALLOWED_ACTIONS)),
         recent_steps=raw.get("recent_steps", 5),
         llm_retry_count=raw.get("llm_retry_count", 1),

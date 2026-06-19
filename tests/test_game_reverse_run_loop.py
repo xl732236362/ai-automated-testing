@@ -158,6 +158,7 @@ class TestRunLoop(unittest.TestCase):
                 package_name="com.example.game",
                 max_steps=2,
                 output_root=tmpdir,
+                profile_enabled=False,
                 allowed_actions=["screenshot", "wait"],
                 mission=Mission(type="feature_test", goal="测试任务", targets=["任务"]),
             )
@@ -188,6 +189,7 @@ class TestRunLoop(unittest.TestCase):
                 package_name="com.example.game",
                 max_steps=1,
                 output_root=tmpdir,
+                profile_enabled=False,
                 allowed_actions=["screenshot", "wait"],
                 mission=Mission(type="free_explore", goal="探索任务", targets=["玩法"]),
             )
@@ -220,6 +222,7 @@ class TestRunLoop(unittest.TestCase):
                 package_name="com.example.game",
                 max_steps=2,
                 output_root=tmpdir,
+                profile_enabled=False,
                 allowed_actions=["screenshot", "wait"],
                 mission=Mission(type="free_explore", goal="探索任务", targets=["玩法"]),
             )
@@ -243,6 +246,7 @@ class TestRunLoop(unittest.TestCase):
                 package_name="com.example.game",
                 max_steps=3,
                 output_root=tmpdir,
+                profile_enabled=False,
                 allowed_actions=["screenshot", "wait"],
                 mission=Mission(type="free_explore", goal="探索任务", targets=["玩法"]),
             )
@@ -282,6 +286,7 @@ class TestRunLoop(unittest.TestCase):
                 package_name="com.example.game",
                 max_steps=2,
                 output_root=tmpdir,
+                profile_enabled=False,
                 allowed_actions=["screenshot", "tap"],
                 mission=Mission(type="free_explore", goal="探索任务", targets=["玩法"]),
             )
@@ -315,6 +320,7 @@ class TestRunLoop(unittest.TestCase):
                 package_name="com.example.game",
                 max_steps=2,
                 output_root=tmpdir,
+                profile_enabled=False,
                 allowed_actions=["screenshot", "wait"],
                 mission=Mission(type="free_explore", goal="探索任务", targets=["玩法"]),
             )
@@ -341,6 +347,7 @@ class TestRunLoop(unittest.TestCase):
                 package_name="com.example.game",
                 max_steps=2,
                 output_root=tmpdir,
+                profile_enabled=False,
                 allowed_actions=["screenshot", "wait"],
                 mission=Mission(type="free_explore", goal="探索任务", targets=["玩法"]),
             )
@@ -357,6 +364,52 @@ class TestRunLoop(unittest.TestCase):
 
         self.assertEqual(actions[-1]["recovery_reason"], "repeated no-change feedback")
         self.assertIn("hold_drag_release", actions[-1]["recommended_actions"])
+
+    def test_persists_profile_memory_across_runs(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_root = os.path.join(tmpdir, "sessions")
+            profile_root = os.path.join(tmpdir, "profiles")
+            config = GameReverseConfig(
+                device_uri="Android:///",
+                package_name="com.example.game",
+                max_steps=1,
+                output_root=output_root,
+                profile_root=profile_root,
+                allowed_actions=["screenshot", "wait"],
+                mission=Mission(type="free_explore", goal="探索任务", targets=["玩法"]),
+            )
+
+            run_loop(
+                config,
+                executor=FakeExecutor(),
+                decider=FakeDecider(),
+                session_name="profile-run-one",
+            )
+            run_loop(
+                config,
+                executor=FakeExecutor(),
+                decider=FakeDecider(),
+                session_name="profile-run-two",
+            )
+
+            profile_dir = os.path.join(profile_root, "com.example.game")
+            with open(os.path.join(profile_dir, "profile.json"), encoding="utf-8") as profile_file:
+                profile = json.load(profile_file)
+            with open(os.path.join(profile_dir, "state_map.json"), encoding="utf-8") as state_file:
+                state_map = json.load(state_file)
+            with open(os.path.join(profile_dir, "affordances.json"), encoding="utf-8") as affordance_file:
+                affordances = json.load(affordance_file)
+            with open(os.path.join(profile_dir, "safety_rules.json"), encoding="utf-8") as safety_file:
+                safety_rules = json.load(safety_file)
+            with open(os.path.join(profile_dir, "memory.jsonl"), encoding="utf-8") as memory_file:
+                memory_events = [json.loads(line) for line in memory_file if line.strip()]
+
+        self.assertEqual(profile["package_name"], "com.example.game")
+        self.assertTrue(state_map["states"])
+        self.assertIn("states", affordances)
+        self.assertIn("sensitive_states", safety_rules)
+        self.assertGreaterEqual(len(memory_events), 2)
+        self.assertEqual({event["session_name"] for event in memory_events}, {"profile-run-one", "profile-run-two"})
 
 
 if __name__ == "__main__":

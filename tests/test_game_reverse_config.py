@@ -48,6 +48,8 @@ class TestGameReverseConfig(unittest.TestCase):
         self.assertEqual(config.recent_steps, 5)
         self.assertEqual(config.llm_retry_count, 1)
         self.assertEqual(config.consecutive_failure_limit, 3)
+        self.assertEqual(config.profile_root, "game_reverse/profiles")
+        self.assertTrue(config.profile_enabled)
 
     def test_default_allowed_actions_do_not_include_hold_drag_release(self):
         self.assertNotIn("hold_drag_release", DEFAULT_ALLOWED_ACTIONS)
@@ -79,6 +81,20 @@ class TestGameReverseConfig(unittest.TestCase):
 
                 with self.assertRaisesRegex(ValueError, "max_steps"):
                     load_config(path)
+
+    def test_profile_options_can_be_overridden(self):
+        path = self.write_config(
+            {
+                "package_name": "com.example.game",
+                "profile_root": "tmp/profiles",
+                "profile_enabled": False,
+            }
+        )
+
+        config = load_config(path)
+
+        self.assertEqual(config.profile_root, "tmp/profiles")
+        self.assertFalse(config.profile_enabled)
 
 
 if __name__ == "__main__":
