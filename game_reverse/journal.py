@@ -17,7 +17,7 @@ class Journal:
         screens_dir = os.path.join(session_dir, "screens")
         os.makedirs(screens_dir, exist_ok=True)
 
-        for filename in ("actions.jsonl", "observations.jsonl", "state_transitions.jsonl"):
+        for filename in ("actions.jsonl", "observations.jsonl", "state_transitions.jsonl", "skill_attempts.jsonl"):
             path = os.path.join(session_dir, filename)
             if not os.path.exists(path):
                 open(path, "a", encoding="utf-8").close()
@@ -40,6 +40,9 @@ class Journal:
 
     def write_state_transition(self, record):
         self._append_jsonl("state_transitions.jsonl", record)
+
+    def write_skill_attempt(self, record):
+        self._append_jsonl("skill_attempts.jsonl", record)
 
     def write_state_map(self, state_map):
         path = os.path.join(self.session_dir, "state_map.json")

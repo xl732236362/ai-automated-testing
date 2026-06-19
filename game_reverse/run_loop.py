@@ -15,6 +15,7 @@ from game_reverse.journal import Journal
 from game_reverse.llm_decider import ClaudeDecider
 from game_reverse.memory import ProfileStore
 from game_reverse.report_writer import update_mission_draft, write_final_report
+from game_reverse.skill_library import SkillLibrary
 from game_reverse.state_graph import StateGraph
 
 
@@ -24,6 +25,7 @@ def run_loop(config, executor=None, decider=None, session_name=None, context=Non
     session_name = session_name or time.strftime("%Y%m%d-%H%M%S")
     journal = Journal.create(config.output_root, session_name)
     profile_store = _create_profile_store(config)
+    skill_library = _create_skill_library(profile_store)
     _emit_context_event(
         context,
         "session_started",
@@ -58,6 +60,94 @@ def run_loop(config, executor=None, decider=None, session_name=None, context=Non
             )
             screen_size = _read_screen_size(screen_path)
             mission_draft = journal.read_mission_draft()
+            base_observation_record = {
+                "step": step,
+                "mission_type": config.mission.type,
+                "state": "unknown",
+                "screen_summary": "",
+                "findings": [],
+                "screenshot_tags": [],
+                "risks": [],
+                "screenshot_hash": screenshot_hash,
+                "ocr": [],
+                "ui_nodes": [],
+                "visual_regions": [],
+                "proposed_regions": [],
+            }
+            skill_result = _try_skill(
+                skill_library,
+                base_observation_record,
+                affordance_memory,
+                executor,
+                screen_path,
+                screen_size,
+                config.allowed_actions,
+            )
+            if skill_result is not None:
+                journal.write_skill_attempt(dict(skill_result, step=step))
+                profile_store and profile_store.update_json("skills.json", skill_library.to_skills())
+                if not skill_result["success"]:
+                    skill_result = None
+                else:
+                    observation_record = base_observation_record
+                    state_update = _update_state_and_affordances(
+                        state_graph,
+                        affordance_memory,
+                        step,
+                        relative_screen,
+                        screenshot_hash,
+                        observation_record,
+                        screen_size,
+                    )
+                    transition = state_update["transition"]
+                    action_record = {
+                        "step": step,
+                        "screen": relative_screen,
+                        "mission_type": config.mission.type,
+                        "action": {"type": "skill", "name": skill_result["skill_name"]},
+                        "reason": "replayed skill %s" % skill_result["skill_name"],
+                        "result": "executed",
+                        "action_source": "skill",
+                    }
+                    feedback = _record_feedback_and_artifacts(
+                        previous_observation,
+                        observation_record,
+                        previous_screen_path,
+                        screen_path,
+                        action_record,
+                        transition,
+                        state_update,
+                        feedback_history,
+                        affordance_memory,
+                        journal,
+                        state_graph,
+                        profile_store,
+                        session_name,
+                    )
+                    _emit_context_event(
+                        context,
+                        "step_action",
+                        step=step,
+                        max_steps=config.max_steps,
+                        screen=relative_screen,
+                        action_type="skill",
+                        result=action_record["result"],
+                        reason=action_record["reason"],
+                    )
+                    _emit_context_event(
+                        context,
+                        "run_progress",
+                        step=step,
+                        max_steps=config.max_steps,
+                        action_type="skill",
+                        result=action_record["result"],
+                        message="第 %s 步 / 共 %s 步：skill" % (step, config.max_steps),
+                    )
+                    recent_actions.append(action_record)
+                    previous_observation = observation_record
+                    previous_screen_path = screen_path
+                    failure_count = 0
+                    continue
             decision = decider.decide(
                 screen_path,
                 config.mission,
@@ -91,68 +181,31 @@ def run_loop(config, executor=None, decider=None, session_name=None, context=Non
                 "visual_regions": decision.get("visual_regions", []),
                 "proposed_regions": decision.get("proposed_regions", []),
             }
-            state_update = state_graph.update(
-                step=step,
-                screen_path=relative_screen,
-                observation=observation_record,
-                screenshot_hash=screenshot_hash,
-            )
-            transition = state_update["transition"]
-            observation_record["state_id"] = state_update["state_id"]
-            observation_record["state_visit_count"] = state_update["state_visit_count"]
-            observation_record["state_transition"] = transition["classification"]
-            affordance_memory.collect_from_observation(
-                state_update["state_id"],
-                observation_record,
-                screen_size=screen_size,
-            )
-            feedback = classify_feedback(
-                previous_observation,
-                observation_record,
-                before_screen_path=previous_screen_path,
-                after_screen_path=screen_path,
-            )
-            feedback["action_type"] = action["type"]
-            feedback["state_id"] = state_update["state_id"]
-            feedback_history.append(feedback)
-            strategy = recommend_next_strategy(feedback_history)
-            affordance_memory.record_action_feedback(
-                state_update["state_id"],
-                action,
-                feedback["result"],
-            )
-            action_record["state_id"] = state_update["state_id"]
-            action_record["state_transition"] = transition["classification"]
-            action_record["feedback_result"] = feedback["result"]
-            action_record["feedback_evidence"] = feedback["evidence"]
-            action_record["feedback_confidence"] = feedback["confidence"]
-            action_record["visual_diff_score"] = feedback["visual_diff_score"]
-            action_record["ocr_changed"] = feedback["ocr_changed"]
-            action_record["ui_changed"] = feedback["ui_changed"]
-            action_record["safety_label"] = feedback["safety_label"]
-            action_record["next_strategy"] = strategy["next_strategy"]
-            action_record["recommended_actions"] = strategy["recommended_actions"]
-            action_record["recovery_reason"] = strategy["reason"]
-            observation_record["feedback_result"] = feedback["result"]
-            observation_record["feedback_confidence"] = feedback["confidence"]
-            observation_record["visual_diff_score"] = feedback["visual_diff_score"]
-            observation_record["safety_label"] = feedback["safety_label"]
-            observation_record["next_strategy"] = strategy["next_strategy"]
-            observation_record["recovery_reason"] = strategy["reason"]
-            journal.write_action(action_record)
-            journal.write_observation(observation_record)
-            journal.write_state_transition(transition)
-            journal.write_state_map(state_graph.to_state_map())
-            journal.write_affordances(affordance_memory.to_affordances())
-            _update_profile(
-                profile_store,
-                session_name,
+            state_update = _update_state_and_affordances(
                 state_graph,
                 affordance_memory,
+                step,
+                relative_screen,
+                screenshot_hash,
                 observation_record,
+                screen_size,
+            )
+            transition = state_update["transition"]
+            action_record["action_source"] = "llm"
+            feedback = _record_feedback_and_artifacts(
+                previous_observation,
+                observation_record,
+                previous_screen_path,
+                screen_path,
                 action_record,
                 transition,
-                feedback,
+                state_update,
+                feedback_history,
+                affordance_memory,
+                journal,
+                state_graph,
+                profile_store,
+                session_name,
             )
             journal.update_mission_draft(update_mission_draft(mission_draft, step, decision))
             _emit_context_event(
@@ -238,6 +291,128 @@ def _create_profile_store(config):
         return None
     store = ProfileStore(config.profile_root, config.package_name)
     return store.initialize(package_name=config.package_name)
+
+
+def _create_skill_library(profile_store):
+    if profile_store is None:
+        return SkillLibrary()
+    skills_payload = profile_store.load_json("skills.json", {"version": 1, "skills": []})
+    return SkillLibrary(skills_payload.get("skills", []))
+
+
+def _update_state_and_affordances(
+    state_graph,
+    affordance_memory,
+    step,
+    relative_screen,
+    screenshot_hash,
+    observation_record,
+    screen_size,
+):
+    state_update = state_graph.update(
+        step=step,
+        screen_path=relative_screen,
+        observation=observation_record,
+        screenshot_hash=screenshot_hash,
+    )
+    transition = state_update["transition"]
+    observation_record["state_id"] = state_update["state_id"]
+    observation_record["state_visit_count"] = state_update["state_visit_count"]
+    observation_record["state_transition"] = transition["classification"]
+    affordance_memory.collect_from_observation(
+        state_update["state_id"],
+        observation_record,
+        screen_size=screen_size,
+    )
+    return state_update
+
+
+def _try_skill(
+    skill_library,
+    observation_record,
+    affordance_memory,
+    executor,
+    screen_path,
+    screen_size,
+    allowed_actions,
+):
+    skill = skill_library.best_match(observation_record, affordances=[])
+    if skill is None:
+        return None
+    result = skill_library.replay(
+        skill,
+        executor=executor,
+        screen_path=screen_path,
+        screen_size=screen_size,
+        allowed_actions=allowed_actions,
+    )
+    return result
+
+
+def _record_feedback_and_artifacts(
+    previous_observation,
+    observation_record,
+    previous_screen_path,
+    screen_path,
+    action_record,
+    transition,
+    state_update,
+    feedback_history,
+    affordance_memory,
+    journal,
+    state_graph,
+    profile_store,
+    session_name,
+):
+    feedback = classify_feedback(
+        previous_observation,
+        observation_record,
+        before_screen_path=previous_screen_path,
+        after_screen_path=screen_path,
+    )
+    feedback["action_type"] = action_record["action"]["type"]
+    feedback["state_id"] = state_update["state_id"]
+    feedback_history.append(feedback)
+    strategy = recommend_next_strategy(feedback_history)
+    affordance_memory.record_action_feedback(
+        state_update["state_id"],
+        action_record["action"],
+        feedback["result"],
+    )
+    action_record["state_id"] = state_update["state_id"]
+    action_record["state_transition"] = transition["classification"]
+    action_record["feedback_result"] = feedback["result"]
+    action_record["feedback_evidence"] = feedback["evidence"]
+    action_record["feedback_confidence"] = feedback["confidence"]
+    action_record["visual_diff_score"] = feedback["visual_diff_score"]
+    action_record["ocr_changed"] = feedback["ocr_changed"]
+    action_record["ui_changed"] = feedback["ui_changed"]
+    action_record["safety_label"] = feedback["safety_label"]
+    action_record["next_strategy"] = strategy["next_strategy"]
+    action_record["recommended_actions"] = strategy["recommended_actions"]
+    action_record["recovery_reason"] = strategy["reason"]
+    observation_record["feedback_result"] = feedback["result"]
+    observation_record["feedback_confidence"] = feedback["confidence"]
+    observation_record["visual_diff_score"] = feedback["visual_diff_score"]
+    observation_record["safety_label"] = feedback["safety_label"]
+    observation_record["next_strategy"] = strategy["next_strategy"]
+    observation_record["recovery_reason"] = strategy["reason"]
+    journal.write_action(action_record)
+    journal.write_observation(observation_record)
+    journal.write_state_transition(transition)
+    journal.write_state_map(state_graph.to_state_map())
+    journal.write_affordances(affordance_memory.to_affordances())
+    _update_profile(
+        profile_store,
+        session_name,
+        state_graph,
+        affordance_memory,
+        observation_record,
+        action_record,
+        transition,
+        feedback,
+    )
+    return feedback
 
 
 def _update_profile(

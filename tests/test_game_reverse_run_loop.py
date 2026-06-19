@@ -29,6 +29,14 @@ class FakeExecutor:
         return "executed"
 
 
+class FailingSkillExecutor(FakeExecutor):
+    def execute(self, action, screen_path):
+        if action["type"] == "tap":
+            self.executed.append((action, screen_path))
+            raise RuntimeError("skill tap failed")
+        return super().execute(action, screen_path)
+
+
 class ChangingScreenshotExecutor(FakeExecutor):
     def __init__(self):
         super().__init__()
@@ -59,7 +67,11 @@ class ByteChangingScreenshotExecutor(FakeExecutor):
 
 
 class FakeDecider:
+    def __init__(self):
+        self.calls = 0
+
     def decide(self, screen_path, mission, recent_actions, mission_draft):
+        self.calls += 1
         return {
             "screen_summary": "主界面",
             "state": "main_menu",
@@ -410,6 +422,104 @@ class TestRunLoop(unittest.TestCase):
         self.assertIn("sensitive_states", safety_rules)
         self.assertGreaterEqual(len(memory_events), 2)
         self.assertEqual({event["session_name"] for event in memory_events}, {"profile-run-one", "profile-run-two"})
+
+    def test_uses_profile_skill_before_decider(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_root = os.path.join(tmpdir, "sessions")
+            profile_root = os.path.join(tmpdir, "profiles")
+            profile_dir = os.path.join(profile_root, "com.example.game")
+            os.makedirs(profile_dir)
+            with open(os.path.join(profile_dir, "skills.json"), "w", encoding="utf-8") as skills_file:
+                json.dump(
+                    {
+                        "version": 1,
+                        "skills": [
+                            {
+                                "name": "wait_on_unknown",
+                                "trigger": {"state_labels": ["unknown"]},
+                                "steps": [{"type": "wait", "seconds": 1}],
+                                "confidence": 0.8,
+                            }
+                        ],
+                    },
+                    skills_file,
+                )
+            config = GameReverseConfig(
+                device_uri="Android:///",
+                package_name="com.example.game",
+                max_steps=1,
+                output_root=output_root,
+                profile_root=profile_root,
+                allowed_actions=["screenshot", "wait"],
+                mission=Mission(type="free_explore", goal="探索任务", targets=["玩法"]),
+            )
+            decider = FakeDecider()
+            executor = FakeExecutor()
+
+            session_dir = run_loop(
+                config,
+                executor=executor,
+                decider=decider,
+                session_name="skill-run",
+            )
+
+            with open(os.path.join(session_dir, "actions.jsonl"), encoding="utf-8") as action_file:
+                actions = [json.loads(line) for line in action_file if line.strip()]
+            with open(os.path.join(session_dir, "skill_attempts.jsonl"), encoding="utf-8") as attempt_file:
+                attempts = [json.loads(line) for line in attempt_file if line.strip()]
+
+        self.assertEqual(decider.calls, 0)
+        self.assertEqual(actions[0]["action_source"], "skill")
+        self.assertEqual(attempts[0]["skill_name"], "wait_on_unknown")
+        self.assertTrue(attempts[0]["success"])
+
+    def test_failed_profile_skill_falls_back_to_decider(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_root = os.path.join(tmpdir, "sessions")
+            profile_root = os.path.join(tmpdir, "profiles")
+            profile_dir = os.path.join(profile_root, "com.example.game")
+            os.makedirs(profile_dir)
+            with open(os.path.join(profile_dir, "skills.json"), "w", encoding="utf-8") as skills_file:
+                json.dump(
+                    {
+                        "version": 1,
+                        "skills": [
+                            {
+                                "name": "tap_unknown",
+                                "trigger": {"state_labels": ["unknown"]},
+                                "steps": [{"type": "tap", "x": 10, "y": 20}],
+                                "confidence": 0.8,
+                            }
+                        ],
+                    },
+                    skills_file,
+                )
+            config = GameReverseConfig(
+                device_uri="Android:///",
+                package_name="com.example.game",
+                max_steps=1,
+                output_root=output_root,
+                profile_root=profile_root,
+                allowed_actions=["screenshot", "tap", "wait"],
+                mission=Mission(type="free_explore", goal="探索任务", targets=["玩法"]),
+            )
+            decider = FakeDecider()
+
+            session_dir = run_loop(
+                config,
+                executor=FailingSkillExecutor(),
+                decider=decider,
+                session_name="skill-fallback-run",
+            )
+
+            with open(os.path.join(session_dir, "actions.jsonl"), encoding="utf-8") as action_file:
+                actions = [json.loads(line) for line in action_file if line.strip()]
+            with open(os.path.join(session_dir, "skill_attempts.jsonl"), encoding="utf-8") as attempt_file:
+                attempts = [json.loads(line) for line in attempt_file if line.strip()]
+
+        self.assertEqual(decider.calls, 1)
+        self.assertFalse(attempts[0]["success"])
+        self.assertEqual(actions[0]["action_source"], "llm")
 
 
 if __name__ == "__main__":

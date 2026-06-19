@@ -42,6 +42,7 @@ class ProfileStore:
         self._ensure_json("state_map.json", {"version": 1, "states": {}, "transitions": []})
         self._ensure_json("affordances.json", {"version": 1, "states": {}})
         self._ensure_json("safety_rules.json", {"version": 1, "sensitive_states": [], "interventions": []})
+        self._ensure_json("skills.json", {"version": 1, "skills": []})
         self._ensure_file("memory.jsonl")
         return self
 

@@ -81,6 +81,23 @@ class TestGameReverseJournal(unittest.TestCase):
 
         self.assertEqual(affordances["states"]["state_abc"][0]["id"], "aff_abc")
 
+    def test_writes_skill_attempts(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            journal = Journal.create(tmpdir, session_name="test-session")
+            journal.write_skill_attempt(
+                {
+                    "step": 1,
+                    "skill_name": "close_popup",
+                    "success": True,
+                }
+            )
+
+            attempts_path = os.path.join(journal.session_dir, "skill_attempts.jsonl")
+            with open(attempts_path, "r", encoding="utf-8") as attempt_file:
+                attempt = json.loads(attempt_file.readline())
+
+        self.assertEqual(attempt["skill_name"], "close_popup")
+
 
 if __name__ == "__main__":
     unittest.main()
