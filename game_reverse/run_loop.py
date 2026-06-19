@@ -11,6 +11,7 @@ from game_reverse.airtest_executor import AirtestExecutor
 from game_reverse.affordances import AffordanceMemory
 from game_reverse.config import load_config
 from game_reverse.feedback import classify_feedback, recommend_next_strategy
+from game_reverse.goal_planner import GoalPlanner
 from game_reverse.journal import Journal
 from game_reverse.llm_decider import ClaudeDecider
 from game_reverse.memory import ProfileStore
@@ -26,6 +27,8 @@ def run_loop(config, executor=None, decider=None, session_name=None, context=Non
     journal = Journal.create(config.output_root, session_name)
     profile_store = _create_profile_store(config)
     skill_library = _create_skill_library(profile_store)
+    goal_planner = _create_goal_planner(config, profile_store)
+    _write_goal_artifacts(journal, profile_store, goal_planner, None)
     _emit_context_event(
         context,
         "session_started",
@@ -123,6 +126,7 @@ def run_loop(config, executor=None, decider=None, session_name=None, context=Non
                         state_graph,
                         profile_store,
                         session_name,
+                        goal_planner,
                     )
                     _emit_context_event(
                         context,
@@ -206,6 +210,7 @@ def run_loop(config, executor=None, decider=None, session_name=None, context=Non
                 state_graph,
                 profile_store,
                 session_name,
+                goal_planner,
             )
             journal.update_mission_draft(update_mission_draft(mission_draft, step, decision))
             _emit_context_event(
@@ -234,17 +239,23 @@ def run_loop(config, executor=None, decider=None, session_name=None, context=Non
         except Exception as exc:
             failure_count += 1
             relative_screen = os.path.relpath(screen_path, journal.session_dir)
-            journal.write_action(
-                {
-                    "step": step,
-                    "screen": relative_screen,
-                    "mission_type": config.mission.type,
-                    "action": {"type": "error"},
-                    "error_type": exc.__class__.__name__,
-                    "reason": str(exc),
-                    "result": "failed",
-                }
+            action_record = {
+                "step": step,
+                "screen": relative_screen,
+                "mission_type": config.mission.type,
+                "action": {"type": "error"},
+                "error_type": exc.__class__.__name__,
+                "reason": str(exc),
+                "result": "failed",
+            }
+            goal_event = goal_planner.update(
+                {},
+                action_record,
+                {"result": "executor_error", "evidence": str(exc)},
             )
+            _attach_goal_context(action_record, {}, goal_planner, goal_event)
+            journal.write_action(action_record)
+            _write_goal_artifacts(journal, profile_store, goal_planner, dict(goal_event, step=step))
             _emit_context_event(
                 context,
                 "step_failed",
@@ -258,17 +269,18 @@ def run_loop(config, executor=None, decider=None, session_name=None, context=Non
                 stop_reason = "consecutive_failures"
                 break
 
+    _write_goal_artifacts(journal, profile_store, goal_planner, None)
+    journal.write_state_map(state_graph.to_state_map())
+    journal.write_affordances(affordance_memory.to_affordances())
+    if profile_store is not None:
+        profile_store.update_json("state_map.json", state_graph.to_state_map())
+        profile_store.update_json("affordances.json", affordance_memory.to_affordances())
     write_final_report(
         journal.session_dir,
         journal.read_mission_draft(),
         config.mission,
         stop_reason,
     )
-    journal.write_state_map(state_graph.to_state_map())
-    journal.write_affordances(affordance_memory.to_affordances())
-    if profile_store is not None:
-        profile_store.update_json("state_map.json", state_graph.to_state_map())
-        profile_store.update_json("affordances.json", affordance_memory.to_affordances())
     _emit_context_event(
         context,
         "run_report_written",
@@ -298,6 +310,13 @@ def _create_skill_library(profile_store):
         return SkillLibrary()
     skills_payload = profile_store.load_json("skills.json", {"version": 1, "skills": []})
     return SkillLibrary(skills_payload.get("skills", []))
+
+
+def _create_goal_planner(config, profile_store):
+    existing_goals = None
+    if profile_store is not None:
+        existing_goals = profile_store.load_json("goals.json", {})
+    return GoalPlanner(config.mission, existing=existing_goals)
 
 
 def _update_state_and_affordances(
@@ -363,6 +382,7 @@ def _record_feedback_and_artifacts(
     state_graph,
     profile_store,
     session_name,
+    goal_planner,
 ):
     feedback = classify_feedback(
         previous_observation,
@@ -397,11 +417,19 @@ def _record_feedback_and_artifacts(
     observation_record["safety_label"] = feedback["safety_label"]
     observation_record["next_strategy"] = strategy["next_strategy"]
     observation_record["recovery_reason"] = strategy["reason"]
+    goal_event = goal_planner.update(observation_record, action_record, feedback)
+    _attach_goal_context(action_record, observation_record, goal_planner, goal_event)
     journal.write_action(action_record)
     journal.write_observation(observation_record)
     journal.write_state_transition(transition)
     journal.write_state_map(state_graph.to_state_map())
     journal.write_affordances(affordance_memory.to_affordances())
+    _write_goal_artifacts(
+        journal,
+        profile_store,
+        goal_planner,
+        dict(goal_event, step=observation_record["step"]),
+    )
     _update_profile(
         profile_store,
         session_name,
@@ -413,6 +441,25 @@ def _record_feedback_and_artifacts(
         feedback,
     )
     return feedback
+
+
+def _attach_goal_context(action_record, observation_record, goal_planner, goal_event):
+    goals = goal_planner.to_goals()
+    action_record["active_subgoal"] = goals["active_subgoal"]
+    action_record["goal_event"] = goal_event["event"]
+    action_record["goal_candidates"] = goals["next_candidates"]
+    if observation_record is not None:
+        observation_record["active_subgoal"] = goals["active_subgoal"]
+        observation_record["goal_event"] = goal_event["event"]
+
+
+def _write_goal_artifacts(journal, profile_store, goal_planner, goal_event):
+    if goal_event is not None:
+        journal.write_goal_event(goal_event)
+    goals = goal_planner.to_goals()
+    journal.write_goals(goals)
+    if profile_store is not None:
+        profile_store.update_json("goals.json", goals)
 
 
 def _update_profile(

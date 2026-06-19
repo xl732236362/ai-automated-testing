@@ -20,6 +20,7 @@ def update_mission_draft(current_draft, step, decision):
 
 def write_final_report(session_dir, mission_draft, mission, stop_reason):
     states = _load_state_counts(session_dir)
+    goals = _load_goals(session_dir)
     title = _report_title(mission.type)
     sections = [
         "# %s" % title,
@@ -39,6 +40,7 @@ def write_final_report(session_dir, mission_draft, mission, stop_reason):
     ]
     for state, count in states.most_common():
         sections.append("- %s: %s 次" % (state, count))
+    sections.extend(_goal_sections(goals))
     sections.extend(_mission_sections(mission.type))
     sections.extend(["", "## 任务草稿", "", mission_draft])
 
@@ -56,6 +58,38 @@ def _load_state_counts(session_dir):
                     observation = json.loads(line)
                     states[observation.get("state", "unknown")] += 1
     return states
+
+
+def _load_goals(session_dir):
+    goals_path = os.path.join(session_dir, "goals.json")
+    if not os.path.exists(goals_path):
+        return {}
+    with open(goals_path, "r", encoding="utf-8") as goals_file:
+        return json.load(goals_file)
+
+
+def _goal_sections(goals):
+    if not goals:
+        return []
+    sections = [
+        "",
+        "## Goal Progress",
+        "",
+        "- Main goal: %s" % goals.get("main_goal", ""),
+        "- Active subgoal: %s" % goals.get("active_subgoal", ""),
+    ]
+    completed = goals.get("completed_subgoals") or []
+    if completed:
+        sections.append("- Completed subgoals: %s" % ", ".join(completed))
+    blocked = goals.get("blocked_subgoals") or []
+    if blocked:
+        sections.append("- Blocked subgoals:")
+        for item in blocked:
+            sections.append("  - %s: %s" % (item.get("subgoal", ""), item.get("reason", "")))
+    next_candidates = goals.get("next_candidates") or []
+    if next_candidates:
+        sections.append("- Next candidates: %s" % ", ".join(next_candidates))
+    return sections
 
 
 def _report_title(mission_type):

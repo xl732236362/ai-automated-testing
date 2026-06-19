@@ -423,6 +423,36 @@ class TestRunLoop(unittest.TestCase):
         self.assertGreaterEqual(len(memory_events), 2)
         self.assertEqual({event["session_name"] for event in memory_events}, {"profile-run-one", "profile-run-two"})
 
+    def test_writes_goal_artifacts_for_run(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config = GameReverseConfig(
+                device_uri="Android:///",
+                package_name="com.example.game",
+                max_steps=1,
+                output_root=tmpdir,
+                profile_enabled=False,
+                allowed_actions=["screenshot", "wait"],
+                mission=Mission(type="free_explore", goal="Explore safely", targets=["玩法"]),
+            )
+
+            session_dir = run_loop(
+                config,
+                executor=FakeExecutor(),
+                decider=FakeDecider(),
+                session_name="goal-session",
+            )
+
+            with open(os.path.join(session_dir, "goals.json"), encoding="utf-8") as goals_file:
+                goals = json.load(goals_file)
+            with open(os.path.join(session_dir, "goal_events.jsonl"), encoding="utf-8") as events_file:
+                events = [json.loads(line) for line in events_file if line.strip()]
+            with open(os.path.join(session_dir, "actions.jsonl"), encoding="utf-8") as action_file:
+                actions = [json.loads(line) for line in action_file if line.strip()]
+
+        self.assertEqual(goals["main_goal"], "Explore safely")
+        self.assertTrue(events)
+        self.assertIn("active_subgoal", actions[0])
+
     def test_uses_profile_skill_before_decider(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             output_root = os.path.join(tmpdir, "sessions")

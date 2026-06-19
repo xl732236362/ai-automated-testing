@@ -72,5 +72,31 @@ class TestReportWriter(unittest.TestCase):
         self.assertIn("关卡列表", report)
 
 
+    def test_final_report_includes_goal_progress_and_blocked_reasons(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            open(os.path.join(tmpdir, "observations.jsonl"), "w", encoding="utf-8").close()
+            with open(os.path.join(tmpdir, "goals.json"), "w", encoding="utf-8") as goals_file:
+                json.dump(
+                    {
+                        "main_goal": "Explore safely",
+                        "active_subgoal": "recover to safe screen",
+                        "completed_subgoals": ["stabilize launch state"],
+                        "blocked_subgoals": [{"subgoal": "enter primary flow", "reason": "login required"}],
+                        "next_candidates": ["back", "wait"],
+                    },
+                    goals_file,
+                )
+            mission = Mission(type="free_explore", goal="Explore safely", targets=[])
+
+            write_final_report(tmpdir, "# Draft", mission, stop_reason="max_steps_reached")
+
+            with open(os.path.join(tmpdir, "final_report.md"), "r", encoding="utf-8") as report_file:
+                report = report_file.read()
+
+        self.assertIn("Goal Progress", report)
+        self.assertIn("recover to safe screen", report)
+        self.assertIn("login required", report)
+
+
 if __name__ == "__main__":
     unittest.main()

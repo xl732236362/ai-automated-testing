@@ -17,7 +17,13 @@ class Journal:
         screens_dir = os.path.join(session_dir, "screens")
         os.makedirs(screens_dir, exist_ok=True)
 
-        for filename in ("actions.jsonl", "observations.jsonl", "state_transitions.jsonl", "skill_attempts.jsonl"):
+        for filename in (
+            "actions.jsonl",
+            "observations.jsonl",
+            "state_transitions.jsonl",
+            "skill_attempts.jsonl",
+            "goal_events.jsonl",
+        ):
             path = os.path.join(session_dir, filename)
             if not os.path.exists(path):
                 open(path, "a", encoding="utf-8").close()
@@ -44,6 +50,9 @@ class Journal:
     def write_skill_attempt(self, record):
         self._append_jsonl("skill_attempts.jsonl", record)
 
+    def write_goal_event(self, record):
+        self._append_jsonl("goal_events.jsonl", record)
+
     def write_state_map(self, state_map):
         path = os.path.join(self.session_dir, "state_map.json")
         with open(path, "w", encoding="utf-8") as state_map_file:
@@ -55,6 +64,12 @@ class Journal:
         with open(path, "w", encoding="utf-8") as affordances_file:
             json.dump(affordances, affordances_file, ensure_ascii=False, indent=2, sort_keys=True)
             affordances_file.write("\n")
+
+    def write_goals(self, goals):
+        path = os.path.join(self.session_dir, "goals.json")
+        with open(path, "w", encoding="utf-8") as goals_file:
+            json.dump(goals, goals_file, ensure_ascii=False, indent=2, sort_keys=True)
+            goals_file.write("\n")
 
     def update_mission_draft(self, content):
         with open(os.path.join(self.session_dir, "mission_draft.md"), "w", encoding="utf-8") as draft_file:

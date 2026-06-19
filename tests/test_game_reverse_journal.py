@@ -98,6 +98,31 @@ class TestGameReverseJournal(unittest.TestCase):
 
         self.assertEqual(attempt["skill_name"], "close_popup")
 
+    def test_writes_goal_artifacts(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            journal = Journal.create(tmpdir, session_name="test-session")
+            journal.write_goal_event({"step": 1, "event": "subgoal_progress"})
+            journal.write_goals(
+                {
+                    "version": 1,
+                    "main_goal": "Explore",
+                    "active_subgoal": "stabilize launch state",
+                    "completed_subgoals": [],
+                    "blocked_subgoals": [],
+                    "next_candidates": [],
+                }
+            )
+
+            events_path = os.path.join(journal.session_dir, "goal_events.jsonl")
+            goals_path = os.path.join(journal.session_dir, "goals.json")
+            with open(events_path, "r", encoding="utf-8") as events_file:
+                event = json.loads(events_file.readline())
+            with open(goals_path, "r", encoding="utf-8") as goals_file:
+                goals = json.load(goals_file)
+
+        self.assertEqual(event["event"], "subgoal_progress")
+        self.assertEqual(goals["main_goal"], "Explore")
+
 
 if __name__ == "__main__":
     unittest.main()

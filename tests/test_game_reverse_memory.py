@@ -25,6 +25,7 @@ class TestProfileMemory(unittest.TestCase):
                 "affordances.json",
                 "safety_rules.json",
                 "skills.json",
+                "goals.json",
                 "memory.jsonl",
             ]
             for filename in expected_files:
