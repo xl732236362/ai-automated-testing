@@ -47,6 +47,12 @@ class Journal:
             json.dump(state_map, state_map_file, ensure_ascii=False, indent=2, sort_keys=True)
             state_map_file.write("\n")
 
+    def write_affordances(self, affordances):
+        path = os.path.join(self.session_dir, "affordances.json")
+        with open(path, "w", encoding="utf-8") as affordances_file:
+            json.dump(affordances, affordances_file, ensure_ascii=False, indent=2, sort_keys=True)
+            affordances_file.write("\n")
+
     def update_mission_draft(self, content):
         with open(os.path.join(self.session_dir, "mission_draft.md"), "w", encoding="utf-8") as draft_file:
             draft_file.write(content)

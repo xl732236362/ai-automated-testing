@@ -8,6 +8,7 @@ import time
 
 from game_reverse.actions import validate_action
 from game_reverse.airtest_executor import AirtestExecutor
+from game_reverse.affordances import AffordanceMemory
 from game_reverse.config import load_config
 from game_reverse.feedback import classify_feedback, recommend_next_strategy
 from game_reverse.journal import Journal
@@ -35,6 +36,7 @@ def run_loop(config, executor=None, decider=None, session_name=None, context=Non
     feedback_history = []
     previous_observation = None
     state_graph = StateGraph()
+    affordance_memory = AffordanceMemory()
     failure_count = 0
     stop_reason = "max_steps_reached"
 
@@ -81,6 +83,10 @@ def run_loop(config, executor=None, decider=None, session_name=None, context=Non
                 "screenshot_tags": decision.get("screenshot_tags", []),
                 "risks": decision.get("risks", []),
                 "screenshot_hash": screenshot_hash,
+                "ocr": decision.get("ocr", []),
+                "ui_nodes": decision.get("ui_nodes", []),
+                "visual_regions": decision.get("visual_regions", []),
+                "proposed_regions": decision.get("proposed_regions", []),
             }
             state_update = state_graph.update(
                 step=step,
@@ -92,10 +98,20 @@ def run_loop(config, executor=None, decider=None, session_name=None, context=Non
             observation_record["state_id"] = state_update["state_id"]
             observation_record["state_visit_count"] = state_update["state_visit_count"]
             observation_record["state_transition"] = transition["classification"]
+            affordance_memory.collect_from_observation(
+                state_update["state_id"],
+                observation_record,
+                screen_size=screen_size,
+            )
             feedback = classify_feedback(previous_observation, observation_record)
             feedback["action_type"] = action["type"]
             feedback_history.append(feedback)
             strategy = recommend_next_strategy(feedback_history)
+            affordance_memory.record_action_feedback(
+                state_update["state_id"],
+                action,
+                feedback["result"],
+            )
             action_record["state_id"] = state_update["state_id"]
             action_record["state_transition"] = transition["classification"]
             action_record["feedback_result"] = feedback["result"]
@@ -107,6 +123,7 @@ def run_loop(config, executor=None, decider=None, session_name=None, context=Non
             journal.write_observation(observation_record)
             journal.write_state_transition(transition)
             journal.write_state_map(state_graph.to_state_map())
+            journal.write_affordances(affordance_memory.to_affordances())
             journal.update_mission_draft(update_mission_draft(mission_draft, step, decision))
             _emit_context_event(
                 context,
@@ -164,6 +181,7 @@ def run_loop(config, executor=None, decider=None, session_name=None, context=Non
         stop_reason,
     )
     journal.write_state_map(state_graph.to_state_map())
+    journal.write_affordances(affordance_memory.to_affordances())
     _emit_context_event(
         context,
         "run_report_written",

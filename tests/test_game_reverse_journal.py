@@ -65,6 +65,22 @@ class TestGameReverseJournal(unittest.TestCase):
         self.assertEqual(transition["to_state_id"], "state_abc")
         self.assertEqual(state_map["states"]["state_abc"]["state_id"], "state_abc")
 
+    def test_writes_affordance_artifact(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            journal = Journal.create(tmpdir, session_name="test-session")
+            journal.write_affordances(
+                {
+                    "version": 1,
+                    "states": {"state_abc": [{"id": "aff_abc", "bounds": [1, 2, 3, 4]}]},
+                }
+            )
+
+            affordances_path = os.path.join(journal.session_dir, "affordances.json")
+            with open(affordances_path, "r", encoding="utf-8") as affordances_file:
+                affordances = json.load(affordances_file)
+
+        self.assertEqual(affordances["states"]["state_abc"][0]["id"], "aff_abc")
+
 
 if __name__ == "__main__":
     unittest.main()

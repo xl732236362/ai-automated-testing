@@ -105,6 +105,27 @@ class StateSequenceDecider:
         }
 
 
+class AffordanceDecider:
+    def __init__(self):
+        self.calls = 0
+
+    def decide(self, screen_path, mission, recent_actions, mission_draft):
+        self.calls += 1
+        return {
+            "screen_summary": "Main menu with start button",
+            "state": "main_menu",
+            "action": {"type": "tap", "x": 150, "y": 230},
+            "reason": "tap start candidate",
+            "new_findings": [],
+            "screenshot_tags": ["home"],
+            "risks": [],
+            "ocr": [{"text": "Start", "bounds": [100, 200, 220, 260]}],
+            "ui_nodes": [{"text": "Start", "class": "Button", "bounds": [102, 201, 222, 261]}],
+            "visual_regions": [{"bounds": [500, 900, 700, 1050], "reason": "large button"}],
+            "proposed_regions": [{"bounds": [100, 200, 220, 260], "label": "start button"}],
+        }
+
+
 class FakeContext:
     def __init__(self):
         self.events = []
@@ -239,6 +260,39 @@ class TestRunLoop(unittest.TestCase):
         )
         self.assertIn("no_change", [transition["classification"] for transition in transitions])
         self.assertIn("entered_new_state", [transition["classification"] for transition in transitions])
+
+    def test_writes_affordance_artifacts_for_run(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config = GameReverseConfig(
+                device_uri="Android:///",
+                package_name="com.example.game",
+                max_steps=2,
+                output_root=tmpdir,
+                allowed_actions=["screenshot", "tap"],
+                mission=Mission(type="free_explore", goal="探索任务", targets=["玩法"]),
+            )
+
+            session_dir = run_loop(
+                config,
+                executor=FakeExecutor(),
+                decider=AffordanceDecider(),
+                session_name="affordance-session",
+            )
+
+            affordances_path = os.path.join(session_dir, "affordances.json")
+            observations_path = os.path.join(session_dir, "observations.jsonl")
+            with open(affordances_path, "r", encoding="utf-8") as affordances_file:
+                affordances = json.load(affordances_file)
+            with open(observations_path, "r", encoding="utf-8") as observation_file:
+                observations = [json.loads(line) for line in observation_file if line.strip()]
+
+        state_id = observations[0]["state_id"]
+        state_affordances = affordances["states"][state_id]
+        start_affordance = [item for item in state_affordances if item["label"] == "Start"][0]
+
+        self.assertEqual(len(state_affordances), 2)
+        self.assertEqual(start_affordance["last_result"], "no_visible_change")
+        self.assertEqual(start_affordance["status"], "deprioritized")
 
 
 if __name__ == "__main__":
