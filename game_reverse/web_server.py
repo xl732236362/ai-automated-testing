@@ -47,6 +47,12 @@ def create_handler(service=None, web_root=None):
                 elif path.startswith("/api/sessions/") and path.endswith("/report"):
                     session_id = path[len("/api/sessions/") : -len("/report")]
                     self._send_json(service.session_report(unquote(session_id)))
+                elif path.startswith("/api/profiles/"):
+                    package_name = path[len("/api/profiles/") :]
+                    if not package_name:
+                        self._send_error(404, "not found")
+                        return
+                    self._send_json(service.profile_summary(unquote(package_name)))
                 elif path.startswith("/web/"):
                     self._send_static(path)
                 else:

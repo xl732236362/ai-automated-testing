@@ -62,6 +62,17 @@ class FakeService:
             raise FileNotFoundError(run_id)
         return {"id": run_id, "final_report": "# Report\n"}
 
+    def profile_summary(self, package_name):
+        if package_name != "com.example.game":
+            raise FileNotFoundError(package_name)
+        return {
+            "package_name": package_name,
+            "current_state": {"state_id": "state_home"},
+            "affordances": [],
+            "skills": [],
+            "safety": {"sensitive_states": [], "interventions": []},
+        }
+
 
 class TestGameReverseWebServer(unittest.TestCase):
     def setUp(self):
@@ -142,6 +153,12 @@ class TestGameReverseWebServer(unittest.TestCase):
 
         self.assertEqual(result["id"], "fake-run")
         self.assertEqual(result["final_report"], "# Report\n")
+
+    def test_profile_endpoint_returns_json(self):
+        result = self.get_json("/api/profiles/com.example.game")
+
+        self.assertEqual(result["package_name"], "com.example.game")
+        self.assertEqual(result["current_state"]["state_id"], "state_home")
 
     def test_missing_run_returns_json_error(self):
         with self.assertRaises(HTTPError) as error:

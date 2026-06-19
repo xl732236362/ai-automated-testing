@@ -22,6 +22,7 @@
         <a class="nav-item" href="#runner">执行器</a>
         <a class="nav-item" href="#safety">安全限制</a>
         <a class="nav-item" href="#timeline">事件时间线</a>
+        <a class="nav-item" href="#profile-summary">学习画像</a>
         <a class="nav-item" href="#reports">报告中心</a>
       </nav>
       <section class="sidebar-note">
@@ -160,6 +161,45 @@
           </div>
         </div>
         <ul class="risk-list" id="risk-list"></ul>
+      </section>
+
+      <section id="profile-summary" class="panel">
+        <div class="panel-header compact">
+          <div>
+            <p class="eyebrow">Profile</p>
+            <h2>学习画像</h2>
+          </div>
+        </div>
+        <div class="profile-stack">
+          <div class="profile-block">
+            <h3>当前状态</h3>
+            <div id="profile-current-state"></div>
+          </div>
+          <div class="profile-block">
+            <h3>目标进度</h3>
+            <div id="profile-goals"></div>
+          </div>
+          <div class="profile-block">
+            <h3>状态迁移</h3>
+            <div id="profile-transitions"></div>
+          </div>
+          <div class="profile-block">
+            <h3>可交互区域</h3>
+            <div id="profile-affordances"></div>
+          </div>
+          <div class="profile-block">
+            <h3>技能</h3>
+            <div id="profile-skills"></div>
+          </div>
+          <div class="profile-block">
+            <h3>安全规则</h3>
+            <div id="profile-safety"></div>
+          </div>
+          <div class="profile-block">
+            <h3>动作依据</h3>
+            <div id="action-reasoning"></div>
+          </div>
+        </div>
       </section>
 
       <section id="reports" class="panel">

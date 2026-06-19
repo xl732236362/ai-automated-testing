@@ -652,7 +652,8 @@ li {
 
 .risk-list,
 .report-preview,
-.output-list {
+.output-list,
+.profile-stack {
   padding: 12px;
 }
 
@@ -749,6 +750,46 @@ li {
 .output-item strong {
   overflow-wrap: anywhere;
   font-size: 13px;
+}
+
+.profile-stack {
+  display: grid;
+  gap: 12px;
+}
+
+.profile-block {
+  display: grid;
+  gap: 7px;
+}
+
+.profile-block h3 {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.metric-row {
+  display: grid;
+  grid-template-columns: 76px minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+  min-height: 32px;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--surface-soft);
+  font-size: 12px;
+}
+
+.metric-row span {
+  color: var(--muted);
+}
+
+.metric-row strong {
+  overflow-wrap: anywhere;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 700;
 }
 
 @media (max-width: 1160px) {

@@ -8,6 +8,7 @@ import time
 from game_reverse.config import DEFAULT_ALLOWED_ACTIONS, DEFAULT_MODEL, GameReverseConfig
 from game_reverse.executors import ExecutorError, ExecutorRunContext, create_default_registry
 from game_reverse.mission import parse_mission
+from game_reverse.profile_view import load_profile_summary
 from game_reverse.run_loop import run_loop
 from game_reverse.target_discovery import TargetDiscovery, TargetDiscoveryError
 
@@ -20,8 +21,9 @@ class ValidationError(ValueError):
 
 
 class GameReverseWebService:
-    def __init__(self, output_root=None, runner=None, executors=None, target_discovery=None):
+    def __init__(self, output_root=None, profile_root=None, runner=None, executors=None, target_discovery=None):
         self.output_root = output_root or "game_reverse/outputs/sessions"
+        self.profile_root = profile_root or "game_reverse/profiles"
         self.runner = runner or run_loop
         self.executors = executors or create_default_registry(self.runner)
         self.target_discovery = target_discovery or TargetDiscovery()
@@ -40,6 +42,7 @@ class GameReverseWebService:
     def config(self):
         return {
             "output_root": self.output_root,
+            "profile_root": self.profile_root,
             "default_allowed_actions": list(DEFAULT_ALLOWED_ACTIONS),
             "unsafe_actions": sorted(UNSAFE_ACTIONS),
         }
@@ -147,6 +150,11 @@ class GameReverseWebService:
             "observations": self._read_optional(session_dir, "observations.jsonl"),
         }
 
+    def profile_summary(self, package_name):
+        if not package_name:
+            raise FileNotFoundError(package_name)
+        return load_profile_summary(self.profile_root, package_name)
+
     def _config_from_payload(self, payload):
         runner = payload.get("runner", "game_reverse")
         if not isinstance(runner, str) or not runner:
@@ -173,6 +181,8 @@ class GameReverseWebService:
             mission=parse_mission(payload.get("mission")),
             model=payload.get("model", DEFAULT_MODEL),
             output_root=payload.get("output_root", self.output_root),
+            profile_root=payload.get("profile_root", self.profile_root),
+            profile_enabled=payload.get("profile_enabled", True),
             allowed_actions=allowed_actions,
             recent_steps=payload.get("recent_steps", 5),
             llm_retry_count=payload.get("llm_retry_count", 1),

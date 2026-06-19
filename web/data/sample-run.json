@@ -104,5 +104,87 @@
       "准星视角可通过滑动调整，点击/射击类动作需要后续接后端验证。",
       "敏感页面已按安全策略返回，未执行登录、支付或授权。"
     ]
+  },
+  "profile": {
+    "exists": true,
+    "package_name": "com.example.game",
+    "current_state": {
+      "state_id": "state_sample_aiming",
+      "label": "aiming_view",
+      "summary": "准星视角，等待安全确认。",
+      "visit_count": 2,
+      "last_seen_step": 3,
+      "screenshot_tags": ["aiming", "tutorial"]
+    },
+    "states": [
+      {
+        "state_id": "state_sample_aiming",
+        "label": "aiming_view",
+        "summary": "准星视角，等待安全确认。",
+        "visit_count": 2,
+        "last_seen_step": 3
+      },
+      {
+        "state_id": "state_sample_home",
+        "label": "tutorial_home",
+        "summary": "新手引导主页。",
+        "visit_count": 1,
+        "last_seen_step": 1
+      }
+    ],
+    "transitions": [
+      {
+        "step": 2,
+        "from_state_id": "state_sample_home",
+        "to_state_id": "state_sample_aiming",
+        "classification": "entered_new_state"
+      }
+    ],
+    "affordances": [
+      {
+        "id": "aff_sample_start",
+        "state_id": "state_sample_home",
+        "label": "Start",
+        "confidence": 0.78,
+        "last_result": "entered_new_state",
+        "status": "useful",
+        "supported_actions": ["tap"]
+      }
+    ],
+    "skills": [
+      {
+        "name": "wait_on_tutorial",
+        "confidence": 0.72,
+        "run_count": 3,
+        "success_count": 2,
+        "failure_count": 1,
+        "trigger": {"state_labels": ["tutorial_home"]}
+      }
+    ],
+    "safety": {
+      "sensitive_states": ["state_sample_gate"],
+      "interventions": [
+        {
+          "step": 3,
+          "state_id": "state_sample_gate",
+          "reason": "疑似登录/授权入口"
+        }
+      ]
+    },
+    "goals": {
+      "main_goal": "探索新手引导流程",
+      "active_subgoal": "recover to safe screen",
+      "completed_subgoals": ["stabilize launch state", "identify main navigation"],
+      "blocked_subgoals": [{"subgoal": "enter primary flow", "reason": "sensitive screen"}],
+      "next_candidates": ["back", "wait"]
+    },
+    "memory_summary": {
+      "event_count": 3,
+      "latest_event": {"event": "step", "step": 3}
+    },
+    "recent_memory": [
+      {"event": "step", "step": 1, "state_id": "state_sample_home"},
+      {"event": "step", "step": 3, "state_id": "state_sample_gate"}
+    ]
   }
 }

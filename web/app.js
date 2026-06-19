@@ -51,6 +51,7 @@ function mergeBackendConfig(data, backendConfig) {
     config: {
       ...data.config,
       output_root: backendConfig.output_root || data.config.output_root,
+      profile_root: backendConfig.profile_root || data.config.profile_root,
       allowed_actions: backendConfig.default_allowed_actions || data.config.allowed_actions,
     },
   };
@@ -74,6 +75,8 @@ function renderConsole(data) {
   renderTimeline(data.run.steps);
   renderRisks(data.run.steps);
   renderReport(data.run);
+  renderProfileSummary(data.profile || {exists: false});
+  renderActionReasoning(data.run.steps || []);
   renderEvents([]);
   renderSessions([]);
   markStaticControls();
@@ -572,10 +575,36 @@ function loadReport(sessionId) {
     .then((response) => readJsonOrThrow(response, "读取报告失败"))
     .then((report) => {
       renderReportPreview(report.final_report || "暂无最终报告。");
+      renderActionReasoning(parseJsonLines(report.actions || ""));
+      loadProfileSummary();
       return report;
     })
     .catch((error) => {
       renderReportPreview(error.message);
+      return null;
+    });
+}
+
+function loadProfileSummary() {
+  if (!backendOnline || !currentData) {
+    renderProfileSummary(currentData && currentData.profile ? currentData.profile : {exists: false});
+    return Promise.resolve(null);
+  }
+
+  const packageName = readInputValue("package-name-input", currentData.config.package_name || "");
+  if (!packageName) {
+    renderProfileSummary({exists: false});
+    return Promise.resolve(null);
+  }
+
+  return fetch(`${API_BASE}/api/profiles/${encodeURIComponent(packageName)}`)
+    .then((response) => readJsonOrThrow(response, "读取画像失败"))
+    .then((profile) => {
+      renderProfileSummary(profile);
+      return profile;
+    })
+    .catch(() => {
+      renderProfileSummary({exists: false});
       return null;
     });
 }
@@ -592,6 +621,7 @@ function updateBackendStatus() {
   markStaticControls();
   if (backendOnline) {
     loadSessions();
+    loadProfileSummary();
   }
 }
 
@@ -814,6 +844,168 @@ function renderReportPreview(markdown) {
       return paragraph;
     })
   );
+}
+
+function renderProfileSummary(profile) {
+  const summary = profile || {};
+  if (!summary.exists) {
+    setPanelRows("profile-current-state", [createEmptyBlock("Profile not learned yet")]);
+    setPanelRows("profile-goals", [createEmptyBlock("暂无目标进度")]);
+    setPanelRows("profile-transitions", [createEmptyBlock("暂无状态迁移")]);
+    setPanelRows("profile-affordances", [createEmptyBlock("暂无可交互区域")]);
+    setPanelRows("profile-skills", [createEmptyBlock("暂无技能")]);
+    setPanelRows("profile-safety", [createEmptyBlock("暂无安全干预")]);
+    return;
+  }
+
+  renderCurrentState(summary.current_state || {});
+  renderGoals(summary.goals || {});
+  renderTransitions(summary.transitions || []);
+  renderAffordances(summary.affordances || []);
+  renderSkills(summary.skills || []);
+  renderSafety(summary.safety || {});
+}
+
+function renderCurrentState(state) {
+  const rows = state.state_id
+    ? [
+        createMetricRow("State", state.state_id),
+        createMetricRow("Label", state.label || "-"),
+        createMetricRow("Visits", state.visit_count || 0),
+        createMetricRow("Last step", state.last_seen_step || "-"),
+        createMetricRow("Summary", state.summary || "-"),
+      ]
+    : [createEmptyBlock("Profile not learned yet")];
+  setPanelRows("profile-current-state", rows);
+}
+
+function renderGoals(goals) {
+  const rows = [
+    createMetricRow("Main", goals.main_goal || "-"),
+    createMetricRow("Active", goals.active_subgoal || "-"),
+  ];
+  if ((goals.completed_subgoals || []).length > 0) {
+    rows.push(createMetricRow("Completed", goals.completed_subgoals.join(", ")));
+  }
+  if ((goals.blocked_subgoals || []).length > 0) {
+    rows.push(
+      createMetricRow(
+        "Blocked",
+        goals.blocked_subgoals.map((item) => `${item.subgoal}: ${item.reason}`).join("; ")
+      )
+    );
+  }
+  setPanelRows("profile-goals", rows);
+}
+
+function renderTransitions(transitions) {
+  setPanelRows(
+    "profile-transitions",
+    transitions.length
+      ? transitions.slice(0, 5).map((item) =>
+          createMetricRow(
+            `#${item.step || "-"}`,
+            `${item.from_state_id || "start"} -> ${item.to_state_id || "-"} (${item.classification || "-"})`
+          )
+        )
+      : [createEmptyBlock("暂无状态迁移")]
+  );
+}
+
+function renderAffordances(affordances) {
+  setPanelRows(
+    "profile-affordances",
+    affordances.length
+      ? affordances.slice(0, 6).map((item) =>
+          createMetricRow(
+            item.label || item.id || "region",
+            `${formatConfidence(item.confidence)} · ${item.last_result || item.status || "candidate"}`
+          )
+        )
+      : [createEmptyBlock("暂无可交互区域")]
+  );
+}
+
+function renderSkills(skills) {
+  setPanelRows(
+    "profile-skills",
+    skills.length
+      ? skills.slice(0, 6).map((item) =>
+          createMetricRow(
+            item.name || "skill",
+            `${formatConfidence(item.confidence)} · ${item.success_count || 0}/${item.run_count || 0}`
+          )
+        )
+      : [createEmptyBlock("暂无技能")]
+  );
+}
+
+function renderSafety(safety) {
+  const interventions = safety.interventions || [];
+  const sensitiveStates = safety.sensitive_states || [];
+  const rows = [];
+  if (sensitiveStates.length > 0) {
+    rows.push(createMetricRow("Sensitive", sensitiveStates.join(", ")));
+  }
+  interventions.slice(-5).forEach((item) => {
+    rows.push(createMetricRow(`#${item.step || "-"}`, item.reason || item.state_id || "-"));
+  });
+  setPanelRows("profile-safety", rows.length ? rows : [createEmptyBlock("暂无安全干预")]);
+}
+
+function renderActionReasoning(actions) {
+  const rows = (actions || [])
+    .slice(-5)
+    .reverse()
+    .map((item) => {
+      const action = item.action && item.action.type ? item.action.type : "-";
+      const source = item.action_source || "llm";
+      const reason = item.reason || item.feedback_result || "-";
+      const subgoal = item.active_subgoal ? ` · ${item.active_subgoal}` : "";
+      return createMetricRow(`#${item.step || "-"} ${action}`, `${source}${subgoal} · ${reason}`);
+    });
+  setPanelRows("action-reasoning", rows.length ? rows : [createEmptyBlock("暂无动作依据")]);
+}
+
+function parseJsonLines(text) {
+  return String(text || "")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      try {
+        return JSON.parse(line);
+      } catch (error) {
+        return null;
+      }
+    })
+    .filter(Boolean);
+}
+
+function setPanelRows(id, rows) {
+  const panel = document.getElementById(id);
+  if (panel) {
+    panel.replaceChildren(...rows);
+  }
+}
+
+function createMetricRow(label, value) {
+  const row = document.createElement("div");
+  row.className = "metric-row";
+  const name = document.createElement("span");
+  name.textContent = label;
+  const content = document.createElement("strong");
+  content.textContent = value;
+  row.append(name, content);
+  return row;
+}
+
+function formatConfidence(value) {
+  const numeric = Number.parseFloat(value);
+  if (!Number.isFinite(numeric)) {
+    return "-";
+  }
+  return `${Math.round(numeric * 100)}%`;
 }
 
 function createEmptyBlock(text) {

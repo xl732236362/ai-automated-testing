@@ -2,6 +2,7 @@
 """Tests for the local game_reverse web service."""
 
 import os
+import json
 import tempfile
 import threading
 import time
@@ -284,6 +285,50 @@ class TestGameReverseWebService(unittest.TestCase):
 
         self.assertNotIn("hold_drag_release", config["default_allowed_actions"])
         self.assertIn("hold_drag_release", config["unsafe_actions"])
+
+    def test_profile_summary_exposes_learned_profile(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            profile_dir = os.path.join(tmpdir, "com.example.game")
+            os.makedirs(profile_dir)
+            with open(os.path.join(profile_dir, "state_map.json"), "w", encoding="utf-8") as state_file:
+                json.dump(
+                    {
+                        "states": {
+                            "state_home": {
+                                "state_id": "state_home",
+                                "label": "home",
+                                "summary": "Home",
+                                "last_seen_step": 2,
+                                "visit_count": 2,
+                            }
+                        },
+                        "transitions": [],
+                    },
+                    state_file,
+                )
+            with open(os.path.join(profile_dir, "affordances.json"), "w", encoding="utf-8") as affordance_file:
+                json.dump({"states": {"state_home": [{"label": "Start", "confidence": 0.9}]}}, affordance_file)
+            with open(os.path.join(profile_dir, "skills.json"), "w", encoding="utf-8") as skill_file:
+                json.dump({"skills": [{"name": "start", "confidence": 0.8}]}, skill_file)
+            with open(os.path.join(profile_dir, "safety_rules.json"), "w", encoding="utf-8") as safety_file:
+                json.dump({"sensitive_states": [], "interventions": []}, safety_file)
+            with open(os.path.join(profile_dir, "goals.json"), "w", encoding="utf-8") as goals_file:
+                json.dump({"main_goal": "Explore", "active_subgoal": "enter primary flow"}, goals_file)
+            service = GameReverseWebService(
+                output_root=os.path.join(tmpdir, "sessions"),
+                profile_root=tmpdir,
+                runner=FakeRunner(),
+                executors=create_default_registry(FakeRunner(), environ={}),
+            )
+
+            summary = service.profile_summary("com.example.game")
+            config = service.config()
+
+        self.assertEqual(config["profile_root"], tmpdir)
+        self.assertEqual(summary["current_state"]["state_id"], "state_home")
+        self.assertEqual(summary["affordances"][0]["label"], "Start")
+        self.assertEqual(summary["skills"][0]["name"], "start")
+        self.assertEqual(summary["goals"]["active_subgoal"], "enter primary flow")
 
     def test_lists_devices_through_discovery_boundary(self):
         discovery = FakeDiscovery()
