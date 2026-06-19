@@ -44,6 +44,20 @@ class ChangingScreenshotExecutor(FakeExecutor):
         return "executed"
 
 
+class ByteChangingScreenshotExecutor(FakeExecutor):
+    def __init__(self):
+        super().__init__()
+        self.screenshot_count = 0
+
+    def execute(self, action, screen_path):
+        self.executed.append((action, screen_path))
+        if action["type"] == "screenshot":
+            self.screenshot_count += 1
+            with open(screen_path, "wb") as screen_file:
+                screen_file.write(("screen-%s" % self.screenshot_count).encode("ascii"))
+        return "executed"
+
+
 class FakeDecider:
     def decide(self, screen_path, mission, recent_actions, mission_draft):
         return {
@@ -293,6 +307,56 @@ class TestRunLoop(unittest.TestCase):
         self.assertEqual(len(state_affordances), 2)
         self.assertEqual(start_affordance["last_result"], "no_visible_change")
         self.assertEqual(start_affordance["status"], "deprioritized")
+
+    def test_records_richer_visual_feedback_fields(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config = GameReverseConfig(
+                device_uri="Android:///",
+                package_name="com.example.game",
+                max_steps=2,
+                output_root=tmpdir,
+                allowed_actions=["screenshot", "wait"],
+                mission=Mission(type="free_explore", goal="探索任务", targets=["玩法"]),
+            )
+
+            session_dir = run_loop(
+                config,
+                executor=ByteChangingScreenshotExecutor(),
+                decider=FakeDecider(),
+                session_name="rich-feedback-session",
+            )
+
+            with open(os.path.join(session_dir, "actions.jsonl"), encoding="utf-8") as action_file:
+                actions = [json.loads(line) for line in action_file if line.strip()]
+
+        self.assertIn("feedback_confidence", actions[-1])
+        self.assertGreater(actions[-1]["visual_diff_score"], 0)
+        self.assertEqual(actions[-1]["recovery_reason"], "")
+        self.assertEqual(actions[-1]["recommended_actions"], [])
+
+    def test_records_recovery_policy_fields(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config = GameReverseConfig(
+                device_uri="Android:///",
+                package_name="com.example.game",
+                max_steps=2,
+                output_root=tmpdir,
+                allowed_actions=["screenshot", "wait"],
+                mission=Mission(type="free_explore", goal="探索任务", targets=["玩法"]),
+            )
+
+            session_dir = run_loop(
+                config,
+                executor=FakeExecutor(),
+                decider=FakeDecider(),
+                session_name="recovery-policy-session",
+            )
+
+            with open(os.path.join(session_dir, "actions.jsonl"), encoding="utf-8") as action_file:
+                actions = [json.loads(line) for line in action_file if line.strip()]
+
+        self.assertEqual(actions[-1]["recovery_reason"], "repeated no-change feedback")
+        self.assertIn("hold_drag_release", actions[-1]["recommended_actions"])
 
 
 if __name__ == "__main__":

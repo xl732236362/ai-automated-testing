@@ -215,6 +215,8 @@ def compact_recent_actions(recent_actions, limit=MAX_PROMPT_RECENT_ACTIONS):
                 "feedback_result": action.get("feedback_result"),
                 "feedback_evidence": compact_text(action.get("feedback_evidence", ""), 160),
                 "next_strategy": action.get("next_strategy"),
+                "recommended_actions": action.get("recommended_actions", []),
+                "recovery_reason": compact_text(action.get("recovery_reason", ""), 160),
             }
         )
     return compacted

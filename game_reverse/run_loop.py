@@ -35,6 +35,7 @@ def run_loop(config, executor=None, decider=None, session_name=None, context=Non
     recent_actions = []
     feedback_history = []
     previous_observation = None
+    previous_screen_path = None
     state_graph = StateGraph()
     affordance_memory = AffordanceMemory()
     failure_count = 0
@@ -103,8 +104,14 @@ def run_loop(config, executor=None, decider=None, session_name=None, context=Non
                 observation_record,
                 screen_size=screen_size,
             )
-            feedback = classify_feedback(previous_observation, observation_record)
+            feedback = classify_feedback(
+                previous_observation,
+                observation_record,
+                before_screen_path=previous_screen_path,
+                after_screen_path=screen_path,
+            )
             feedback["action_type"] = action["type"]
+            feedback["state_id"] = state_update["state_id"]
             feedback_history.append(feedback)
             strategy = recommend_next_strategy(feedback_history)
             affordance_memory.record_action_feedback(
@@ -116,9 +123,20 @@ def run_loop(config, executor=None, decider=None, session_name=None, context=Non
             action_record["state_transition"] = transition["classification"]
             action_record["feedback_result"] = feedback["result"]
             action_record["feedback_evidence"] = feedback["evidence"]
+            action_record["feedback_confidence"] = feedback["confidence"]
+            action_record["visual_diff_score"] = feedback["visual_diff_score"]
+            action_record["ocr_changed"] = feedback["ocr_changed"]
+            action_record["ui_changed"] = feedback["ui_changed"]
+            action_record["safety_label"] = feedback["safety_label"]
             action_record["next_strategy"] = strategy["next_strategy"]
+            action_record["recommended_actions"] = strategy["recommended_actions"]
+            action_record["recovery_reason"] = strategy["reason"]
             observation_record["feedback_result"] = feedback["result"]
+            observation_record["feedback_confidence"] = feedback["confidence"]
+            observation_record["visual_diff_score"] = feedback["visual_diff_score"]
+            observation_record["safety_label"] = feedback["safety_label"]
             observation_record["next_strategy"] = strategy["next_strategy"]
+            observation_record["recovery_reason"] = strategy["reason"]
             journal.write_action(action_record)
             journal.write_observation(observation_record)
             journal.write_state_transition(transition)
@@ -146,6 +164,7 @@ def run_loop(config, executor=None, decider=None, session_name=None, context=Non
             )
             recent_actions.append(action_record)
             previous_observation = observation_record
+            previous_screen_path = screen_path
             failure_count = 0
         except Exception as exc:
             failure_count += 1

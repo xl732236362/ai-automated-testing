@@ -171,6 +171,8 @@ class TestLLMDecider(unittest.TestCase):
                 "feedback_result": "no_visible_change",
                 "feedback_evidence": "screen summary unchanged",
                 "next_strategy": "switch_gesture",
+                "recommended_actions": ["swipe", "hold_drag_release"],
+                "recovery_reason": "repeated no-change feedback",
             }
         ]
 
@@ -179,6 +181,8 @@ class TestLLMDecider(unittest.TestCase):
         self.assertIn("no_visible_change", prompt)
         self.assertIn("screen summary unchanged", prompt)
         self.assertIn("switch_gesture", prompt)
+        self.assertIn("hold_drag_release", prompt)
+        self.assertIn("repeated no-change feedback", prompt)
 
     def _restore_file(self, path, old_content):
         if old_content is None:
