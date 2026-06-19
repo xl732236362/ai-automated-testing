@@ -87,12 +87,15 @@ class TestWebConsoleStatic(unittest.TestCase):
         self.assertIn("wireUnsafeActionToggle", script)
         self.assertIn("/api/devices", script)
         self.assertIn("wireTargetConfigControls", script)
+        self.assertIn("detectBackendConfig", script)
+        self.assertIn("/api/config", script)
+        self.assertIn("mergeBackendConfig", script)
         self.assertIn("detectDevices", script)
         self.assertIn("useForegroundApp", script)
         self.assertIn("validateTargetConfig", script)
         self.assertIn("请手动填写设备地址", script)
         self.assertRegex(script, r"enable_unsafe_actions:\s*getUnsafeActionsEnabled\(\)")
-        self.assertIn('const UNSAFE_ACTIONS = ["tap", "swipe"];', script)
+        self.assertIn('const UNSAFE_ACTIONS = ["tap", "swipe", "hold_drag_release"];', script)
         self.assertNotIn("enable_unsafe_actions: true", script)
         self.assertNotIn("child_process", script)
         self.assertNotIn("codex exec", script)
@@ -124,6 +127,17 @@ class TestWebConsoleStatic(unittest.TestCase):
         self.assertIn("formatEventDetail", script)
         self.assertIn("event.step", script)
         self.assertIn("event.max_steps", script)
+
+    def test_app_surfaces_live_codex_runner_progress(self):
+        script = (WEB_DIR / "app.js").read_text(encoding="utf-8")
+
+        self.assertIn("describeRunState", script)
+        self.assertIn("latestMeaningfulEvent", script)
+        self.assertIn("formatRunnerEventDetail", script)
+        self.assertIn("event.raw.item", script)
+        self.assertIn("rawItem.text", script)
+        self.assertIn("events).reverse()", script)
+        self.assertIn("loadRunEvents(runId).then", script)
 
     def test_touched_web_files_use_readable_chinese(self):
         html = (WEB_DIR / "index.html").read_text(encoding="utf-8")

@@ -17,6 +17,8 @@ REQUIRED_DECISION_FIELDS = [
     "screenshot_tags",
     "risks",
 ]
+MAX_PROMPT_RECENT_ACTIONS = 5
+MAX_MISSION_DRAFT_CHARS = 2000
 
 
 def parse_decision(text):
@@ -170,14 +172,14 @@ def _build_decision_prompt(mission, recent_actions, mission_draft):
     return (
         "You are exploring an Android App/Game for authorized black-box testing, "
         "feature verification, or design analysis. Only recommend these actions: "
-        "screenshot, wait, back, tap, swipe. For login, real-name verification, "
+        "screenshot, wait, back, tap, swipe, hold_drag_release. For login, real-name verification, "
         "payment, permission grants, account/password entry, or other sensitive "
         "screens, recommend back or wait.\n\n"
         "Mission type: %s\n"
         "Mission goal: %s\n"
         "Mission targets: %s\n"
         "Mission success criteria: %s\n\n"
-        "Recent actions:\n%s\n\n"
+        "Recent actions and feedback:\n%s\n\n"
         "Current mission draft:\n%s\n\n"
         "Return only one JSON object. Do not include Markdown fences or explanations. "
         "Use exactly these top-level fields, even when a field has no content:\n"
@@ -195,9 +197,34 @@ def _build_decision_prompt(mission, recent_actions, mission_draft):
         mission.goal,
         json.dumps(mission.targets, ensure_ascii=False),
         json.dumps(mission.success_criteria, ensure_ascii=False),
-        json.dumps(recent_actions, ensure_ascii=False),
-        mission_draft,
+        json.dumps(compact_recent_actions(recent_actions), ensure_ascii=False),
+        compact_text(mission_draft, MAX_MISSION_DRAFT_CHARS),
     )
+
+
+def compact_recent_actions(recent_actions, limit=MAX_PROMPT_RECENT_ACTIONS):
+    compacted = []
+    for action in list(recent_actions or [])[-limit:]:
+        compacted.append(
+            {
+                "step": action.get("step"),
+                "screen": action.get("screen"),
+                "action": action.get("action"),
+                "result": action.get("result"),
+                "reason": compact_text(action.get("reason", ""), 160),
+                "feedback_result": action.get("feedback_result"),
+                "feedback_evidence": compact_text(action.get("feedback_evidence", ""), 160),
+                "next_strategy": action.get("next_strategy"),
+            }
+        )
+    return compacted
+
+
+def compact_text(text, limit):
+    text = str(text or "")
+    if len(text) <= limit:
+        return text
+    return text[:limit] + "\n[truncated]"
 
 
 def _decision_schema():
@@ -211,7 +238,14 @@ def _decision_schema():
                 "properties": {
                     "type": {
                         "type": "string",
-                        "enum": ["screenshot", "wait", "back", "tap", "swipe"],
+                        "enum": [
+                            "screenshot",
+                            "wait",
+                            "back",
+                            "tap",
+                            "swipe",
+                            "hold_drag_release",
+                        ],
                     },
                     "x": {"type": "integer"},
                     "y": {"type": "integer"},
@@ -221,6 +255,7 @@ def _decision_schema():
                     "y2": {"type": "integer"},
                     "seconds": {"type": "number"},
                     "duration": {"type": "number"},
+                    "hold_seconds": {"type": "number"},
                 },
                 "required": ["type"],
                 "additionalProperties": False,

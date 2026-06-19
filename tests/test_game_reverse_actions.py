@@ -41,6 +41,50 @@ class TestGameReverseActions(unittest.TestCase):
                 (1080, 1920),
             )
 
+    def test_accepts_hold_drag_release_action(self):
+        action = validate_action(
+            {
+                "type": "hold_drag_release",
+                "x1": 450,
+                "y1": 1200,
+                "x2": 520,
+                "y2": 820,
+                "hold_seconds": 0.4,
+                "duration": 1.2,
+            },
+            ["hold_drag_release"],
+            (1080, 1920),
+        )
+
+        self.assertEqual(
+            action,
+            {
+                "type": "hold_drag_release",
+                "x1": 450,
+                "y1": 1200,
+                "x2": 520,
+                "y2": 820,
+                "hold_seconds": 0.4,
+                "duration": 1.2,
+            },
+        )
+
+    def test_rejects_hold_drag_release_with_invalid_hold_seconds(self):
+        with self.assertRaisesRegex(ValueError, "hold seconds"):
+            validate_action(
+                {
+                    "type": "hold_drag_release",
+                    "x1": 450,
+                    "y1": 1200,
+                    "x2": 520,
+                    "y2": 820,
+                    "hold_seconds": 6,
+                    "duration": 1.2,
+                },
+                ["hold_drag_release"],
+                (1080, 1920),
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

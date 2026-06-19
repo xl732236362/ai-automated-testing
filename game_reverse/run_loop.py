@@ -2,15 +2,18 @@
 """Mission-driven App/Game exploration loop."""
 
 import argparse
+import hashlib
 import os
 import time
 
 from game_reverse.actions import validate_action
 from game_reverse.airtest_executor import AirtestExecutor
 from game_reverse.config import load_config
+from game_reverse.feedback import classify_feedback, recommend_next_strategy
 from game_reverse.journal import Journal
 from game_reverse.llm_decider import ClaudeDecider
 from game_reverse.report_writer import update_mission_draft, write_final_report
+from game_reverse.state_graph import StateGraph
 
 
 def run_loop(config, executor=None, decider=None, session_name=None, context=None):
@@ -29,6 +32,9 @@ def run_loop(config, executor=None, decider=None, session_name=None, context=Non
     executor.start_app(config.package_name)
 
     recent_actions = []
+    feedback_history = []
+    previous_observation = None
+    state_graph = StateGraph()
     failure_count = 0
     stop_reason = "max_steps_reached"
 
@@ -37,6 +43,7 @@ def run_loop(config, executor=None, decider=None, session_name=None, context=Non
         try:
             executor.execute({"type": "screenshot"}, screen_path)
             relative_screen = os.path.relpath(screen_path, journal.session_dir)
+            screenshot_hash = _file_sha256(screen_path)
             _emit_context_event(
                 context,
                 "step_screenshot",
@@ -73,9 +80,33 @@ def run_loop(config, executor=None, decider=None, session_name=None, context=Non
                 "findings": decision.get("new_findings", []),
                 "screenshot_tags": decision.get("screenshot_tags", []),
                 "risks": decision.get("risks", []),
+                "screenshot_hash": screenshot_hash,
             }
+            state_update = state_graph.update(
+                step=step,
+                screen_path=relative_screen,
+                observation=observation_record,
+                screenshot_hash=screenshot_hash,
+            )
+            transition = state_update["transition"]
+            observation_record["state_id"] = state_update["state_id"]
+            observation_record["state_visit_count"] = state_update["state_visit_count"]
+            observation_record["state_transition"] = transition["classification"]
+            feedback = classify_feedback(previous_observation, observation_record)
+            feedback["action_type"] = action["type"]
+            feedback_history.append(feedback)
+            strategy = recommend_next_strategy(feedback_history)
+            action_record["state_id"] = state_update["state_id"]
+            action_record["state_transition"] = transition["classification"]
+            action_record["feedback_result"] = feedback["result"]
+            action_record["feedback_evidence"] = feedback["evidence"]
+            action_record["next_strategy"] = strategy["next_strategy"]
+            observation_record["feedback_result"] = feedback["result"]
+            observation_record["next_strategy"] = strategy["next_strategy"]
             journal.write_action(action_record)
             journal.write_observation(observation_record)
+            journal.write_state_transition(transition)
+            journal.write_state_map(state_graph.to_state_map())
             journal.update_mission_draft(update_mission_draft(mission_draft, step, decision))
             _emit_context_event(
                 context,
@@ -97,6 +128,7 @@ def run_loop(config, executor=None, decider=None, session_name=None, context=Non
                 message="第 %s 步 / 共 %s 步：%s" % (step, config.max_steps, action["type"]),
             )
             recent_actions.append(action_record)
+            previous_observation = observation_record
             failure_count = 0
         except Exception as exc:
             failure_count += 1
@@ -131,6 +163,7 @@ def run_loop(config, executor=None, decider=None, session_name=None, context=Non
         config.mission,
         stop_reason,
     )
+    journal.write_state_map(state_graph.to_state_map())
     _emit_context_event(
         context,
         "run_report_written",
@@ -156,6 +189,14 @@ def _read_screen_size(screen_path):
             return image.size
     except Exception:
         return (1080, 1920)
+
+
+def _file_sha256(path):
+    digest = hashlib.sha256()
+    with open(path, "rb") as file_obj:
+        for chunk in iter(lambda: file_obj.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return "sha256:%s" % digest.hexdigest()
 
 
 def main():

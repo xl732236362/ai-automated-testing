@@ -10,6 +10,8 @@ import time
 import inspect
 from dataclasses import dataclass, field
 
+from game_reverse.lightweight_runner import run_lightweight_loop
+
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SECRET_PROMPT_KEYS = {"api_key", "authorization", "token", "secret", "password"}
@@ -62,6 +64,39 @@ class GameReverseExecutor:
         if "context" in runner_signature.parameters:
             kwargs["context"] = context
         if "session_name" in runner_signature.parameters and getattr(context, "run_id", None):
+            kwargs["session_name"] = context.run_id
+        return self.runner(config, **kwargs)
+
+
+@dataclass
+class LightweightExecutor:
+    decider: object = None
+    executor_factory: object = None
+    runner: object = run_lightweight_loop
+    id: str = "lightweight"
+    name: str = "lightweight"
+    available: bool = False
+    description: str = "Run a bounded lightweight step loop with compact per-step decisions."
+
+    def __post_init__(self):
+        self.available = self.decider is not None
+        if not self.available:
+            self.description = "Lightweight runner requires a JSON action decider."
+
+    def metadata(self):
+        return {
+            "id": self.id,
+            "name": self.name,
+            "available": self.available,
+            "description": self.description,
+        }
+
+    def start(self, config, payload, context=None):
+        if not self.available:
+            raise ExecutorUnavailableError("runner is not available")
+        kwargs = {"decider": self.decider, "executor_factory": self.executor_factory}
+        if context is not None:
+            kwargs["context"] = context
             kwargs["session_name"] = context.run_id
         return self.runner(config, **kwargs)
 
@@ -424,7 +459,14 @@ class ExecutorRegistry:
         return self.executors[runner_id]
 
 
-def create_default_registry(runner, environ=None, codex_which=None, codex_popen_factory=None):
+def create_default_registry(
+    runner,
+    environ=None,
+    codex_which=None,
+    codex_popen_factory=None,
+    lightweight_decider=None,
+    lightweight_executor_factory=None,
+):
     if environ is None:
         environ = os.environ
     if codex_which is None:
@@ -434,6 +476,10 @@ def create_default_registry(runner, environ=None, codex_which=None, codex_popen_
     return ExecutorRegistry(
         [
             GameReverseExecutor(runner),
+            LightweightExecutor(
+                decider=lightweight_decider,
+                executor_factory=lightweight_executor_factory,
+            ),
             CodexExecExecutor(
                 command=environ.get("GAME_REVERSE_CODEX_COMMAND", "codex") or "codex",
                 timeout_seconds=parse_positive_int(
@@ -540,6 +586,9 @@ def build_runner_prompt(payload, runner_id, config=None, context=None):
         "Use existing project tools and avoid unrelated code changes.",
         "When done, provide a final answer that summarizes what you checked and the result.",
     ]
+    gesture_lines = gesture_exploration_lines(allowed_actions)
+    if gesture_lines:
+        lines.extend([""] + gesture_lines)
     if context is not None:
         output_dir = os.path.abspath(context.run_dir)
         lines.extend(
@@ -554,6 +603,27 @@ def build_runner_prompt(payload, runner_id, config=None, context=None):
             ]
         )
     return "\n".join(lines)
+
+
+def gesture_exploration_lines(allowed_actions):
+    allowed = set(allowed_actions or [])
+    if not {"tap", "swipe", "hold_drag_release"}.intersection(allowed):
+        return []
+    lines = [
+        "Gesture exploration matrix:",
+        "- Test direct tap on visible objects before assuming objects are draggable.",
+        "- Test scene drag or swipe to learn whether the camera/room moves under a fixed reticle.",
+        "- Test tap the fire/action button with and without a target aligned.",
+    ]
+    if "hold_drag_release" in allowed:
+        lines.extend(
+            [
+                "- Test hold_drag_release when a gameplay control may open an aiming view.",
+                "- For hold_drag_release: press the gameplay control, drag toward the target or aiming direction, then release.",
+                "- Record whether the hold-drag-release path changes counters, reticle state, camera, or tray contents.",
+            ]
+        )
+    return lines
 
 
 def parse_jsonl_events(lines, source, message_extractor):

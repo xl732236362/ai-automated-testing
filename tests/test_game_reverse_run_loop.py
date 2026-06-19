@@ -2,6 +2,7 @@
 """Tests for the mission-driven game_reverse run loop."""
 
 import os
+import json
 import tempfile
 import unittest
 
@@ -28,6 +29,21 @@ class FakeExecutor:
         return "executed"
 
 
+class ChangingScreenshotExecutor(FakeExecutor):
+    def __init__(self):
+        super().__init__()
+        self.screenshot_count = 0
+
+    def execute(self, action, screen_path):
+        self.executed.append((action, screen_path))
+        if action["type"] == "screenshot":
+            self.screenshot_count += 1
+            content = b"menu screen" if self.screenshot_count < 3 else b"gameplay screen"
+            with open(screen_path, "wb") as screen_file:
+                screen_file.write(content)
+        return "executed"
+
+
 class FakeDecider:
     def decide(self, screen_path, mission, recent_actions, mission_draft):
         return {
@@ -44,6 +60,47 @@ class FakeDecider:
                 }
             ],
             "screenshot_tags": ["主界面"],
+            "risks": [],
+        }
+
+
+class ChangingSummaryDecider:
+    def __init__(self):
+        self.calls = 0
+
+    def decide(self, screen_path, mission, recent_actions, mission_draft):
+        self.calls += 1
+        summary = "milk counter 3" if self.calls == 1 else "milk counter changed from 3 to 2"
+        return {
+            "screen_summary": summary,
+            "state": "gameplay",
+            "action": {"type": "wait", "seconds": 0},
+            "reason": "observe feedback",
+            "new_findings": [],
+            "screenshot_tags": [],
+            "risks": [],
+        }
+
+
+class StateSequenceDecider:
+    def __init__(self):
+        self.calls = 0
+
+    def decide(self, screen_path, mission, recent_actions, mission_draft):
+        self.calls += 1
+        if self.calls < 3:
+            state = "main_menu"
+            summary = "Main menu with start button"
+        else:
+            state = "gameplay"
+            summary = "Level gameplay started"
+        return {
+            "screen_summary": summary,
+            "state": state,
+            "action": {"type": "wait", "seconds": 0},
+            "reason": "observe state graph",
+            "new_findings": [],
+            "screenshot_tags": [state],
             "risks": [],
         }
 
@@ -120,6 +177,68 @@ class TestRunLoop(unittest.TestCase):
         self.assertEqual(progress["step"], 1)
         self.assertEqual(progress["max_steps"], 1)
         self.assertEqual(progress["action_type"], "wait")
+
+    def test_records_feedback_result_in_action_records(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config = GameReverseConfig(
+                device_uri="Android:///",
+                package_name="com.example.game",
+                max_steps=2,
+                output_root=tmpdir,
+                allowed_actions=["screenshot", "wait"],
+                mission=Mission(type="free_explore", goal="探索任务", targets=["玩法"]),
+            )
+
+            session_dir = run_loop(
+                config,
+                executor=FakeExecutor(),
+                decider=ChangingSummaryDecider(),
+                session_name="feedback-session",
+            )
+
+            with open(os.path.join(session_dir, "actions.jsonl"), encoding="utf-8") as action_file:
+                action_lines = action_file.readlines()
+
+        self.assertIn('"feedback_result": "counter_changed"', action_lines[-1])
+
+    def test_writes_state_graph_artifacts_for_run(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config = GameReverseConfig(
+                device_uri="Android:///",
+                package_name="com.example.game",
+                max_steps=3,
+                output_root=tmpdir,
+                allowed_actions=["screenshot", "wait"],
+                mission=Mission(type="free_explore", goal="探索任务", targets=["玩法"]),
+            )
+
+            session_dir = run_loop(
+                config,
+                executor=ChangingScreenshotExecutor(),
+                decider=StateSequenceDecider(),
+                session_name="state-graph-session",
+            )
+
+            state_map_path = os.path.join(session_dir, "state_map.json")
+            transitions_path = os.path.join(session_dir, "state_transitions.jsonl")
+            observations_path = os.path.join(session_dir, "observations.jsonl")
+
+            with open(state_map_path, "r", encoding="utf-8") as state_map_file:
+                state_map = json.load(state_map_file)
+            with open(transitions_path, "r", encoding="utf-8") as transition_file:
+                transitions = [json.loads(line) for line in transition_file if line.strip()]
+            with open(observations_path, "r", encoding="utf-8") as observation_file:
+                observations = [json.loads(line) for line in observation_file if line.strip()]
+
+        self.assertEqual(state_map["version"], 1)
+        self.assertEqual(len(state_map["states"]), 2)
+        self.assertTrue(all(observation.get("state_id") for observation in observations))
+        self.assertTrue(all(observation.get("screenshot_hash", "").startswith("sha256:") for observation in observations))
+        self.assertTrue(
+            all(state.get("screenshot_hash", "").startswith("sha256:") for state in state_map["states"].values())
+        )
+        self.assertIn("no_change", [transition["classification"] for transition in transitions])
+        self.assertIn("entered_new_state", [transition["classification"] for transition in transitions])
 
 
 if __name__ == "__main__":

@@ -35,6 +35,36 @@ class TestGameReverseJournal(unittest.TestCase):
 
         self.assertIn("Main menu found", content)
 
+    def test_writes_state_graph_artifacts(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            journal = Journal.create(tmpdir, session_name="test-session")
+            journal.write_state_transition(
+                {
+                    "step": 1,
+                    "from_state_id": None,
+                    "to_state_id": "state_abc",
+                    "classification": "entered_new_state",
+                }
+            )
+            journal.write_state_map(
+                {
+                    "version": 1,
+                    "states": {"state_abc": {"state_id": "state_abc"}},
+                    "transitions": [],
+                }
+            )
+
+            transitions_path = os.path.join(journal.session_dir, "state_transitions.jsonl")
+            state_map_path = os.path.join(journal.session_dir, "state_map.json")
+
+            with open(transitions_path, "r", encoding="utf-8") as transition_file:
+                transition = json.loads(transition_file.readline())
+            with open(state_map_path, "r", encoding="utf-8") as state_map_file:
+                state_map = json.load(state_map_file)
+
+        self.assertEqual(transition["to_state_id"], "state_abc")
+        self.assertEqual(state_map["states"]["state_abc"]["state_id"], "state_abc")
+
 
 if __name__ == "__main__":
     unittest.main()

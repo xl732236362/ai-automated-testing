@@ -27,6 +27,17 @@ class FakeApi:
         self.calls.append(("sleep", seconds))
 
 
+class FakeGestureApi(FakeApi):
+    def touch_down(self, pos):
+        self.calls.append(("touch_down", pos))
+
+    def touch_move(self, pos, duration=0.5):
+        self.calls.append(("touch_move", pos, duration))
+
+    def touch_up(self, pos=None):
+        self.calls.append(("touch_up", pos))
+
+
 class TestAirtestExecutor(unittest.TestCase):
     def test_executes_screenshot(self):
         api = FakeApi()
@@ -51,6 +62,33 @@ class TestAirtestExecutor(unittest.TestCase):
         executor.execute({"type": "back"}, screen_path="screen.png")
 
         self.assertEqual(api.calls, [("keyevent", "BACK")])
+
+    def test_executes_hold_drag_release_as_press_wait_drag_release(self):
+        api = FakeGestureApi()
+        executor = AirtestExecutor(api=api)
+
+        executor.execute(
+            {
+                "type": "hold_drag_release",
+                "x1": 450,
+                "y1": 1200,
+                "x2": 520,
+                "y2": 820,
+                "hold_seconds": 0.4,
+                "duration": 1.2,
+            },
+            screen_path="screen.png",
+        )
+
+        self.assertEqual(
+            api.calls,
+            [
+                ("touch_down", (450, 1200)),
+                ("sleep", 0.4),
+                ("touch_move", (520, 820), 1.2),
+                ("touch_up", (520, 820)),
+            ],
+        )
 
 
 if __name__ == "__main__":

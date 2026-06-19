@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """Safe action schema validation for game_reverse."""
 
-SAFE_ACTIONS = {"screenshot", "wait", "back", "tap", "swipe"}
+SAFE_ACTIONS = {"screenshot", "wait", "back", "tap", "swipe", "hold_drag_release"}
 
 
 def validate_action(action, allowed_actions, screen_size):
@@ -46,6 +46,28 @@ def validate_action(action, allowed_actions, screen_size):
             "y1": y1,
             "x2": x2,
             "y2": y2,
+            "duration": duration,
+        }
+    if action_type == "hold_drag_release":
+        x1 = action.get("x1")
+        y1 = action.get("y1")
+        x2 = action.get("x2")
+        y2 = action.get("y2")
+        _validate_point(x1, y1, width, height)
+        _validate_point(x2, y2, width, height)
+        hold_seconds = action.get("hold_seconds", 0.3)
+        if not isinstance(hold_seconds, (int, float)) or hold_seconds < 0 or hold_seconds > 5:
+            raise ValueError("hold seconds must be between 0 and 5")
+        duration = action.get("duration", 0.5)
+        if not isinstance(duration, (int, float)) or duration <= 0 or duration > 5:
+            raise ValueError("swipe duration must be between 0 and 5")
+        return {
+            "type": "hold_drag_release",
+            "x1": x1,
+            "y1": y1,
+            "x2": x2,
+            "y2": y2,
+            "hold_seconds": hold_seconds,
             "duration": duration,
         }
 

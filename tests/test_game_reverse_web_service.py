@@ -135,6 +135,41 @@ class ProgressExecutor(RecordingExecutor):
         return context.run_dir
 
 
+class LightweightJsonDecider:
+    def decide_action(self, step_input):
+        return {
+            "screen_summary": "lightweight screen",
+            "state": "lightweight_state",
+            "action": {"type": "wait", "seconds": 0},
+            "reason": "compact step",
+            "new_findings": [],
+            "screenshot_tags": [],
+            "risks": [],
+        }
+
+
+class FakeLightweightDeviceExecutor:
+    def connect(self, device_uri):
+        self.device_uri = device_uri
+
+    def start_app(self, package_name):
+        self.package_name = package_name
+
+    def execute(self, action, screen_path):
+        if action["type"] == "screenshot":
+            with open(screen_path, "wb") as screen_file:
+                screen_file.write(b"fake png")
+        return "executed"
+
+
+class FakeRunnerExecutorFactory:
+    def __init__(self, output_root):
+        self.output_root = output_root
+
+    def __call__(self):
+        return FakeLightweightDeviceExecutor()
+
+
 class FakeServiceProcess:
     def __init__(self, stdout_lines=None, stderr_lines=None, returncode=0):
         self.stdin = FakeServiceStdin()
@@ -242,6 +277,14 @@ class TestGameReverseWebService(unittest.TestCase):
         self.assertTrue(runners["codex_exec"]["available"])
         self.assertFalse(runners["claude_print"]["available"])
 
+    def test_config_exposes_hold_drag_release_as_unsafe_action(self):
+        service = self.make_service()
+
+        config = service.config()
+
+        self.assertNotIn("hold_drag_release", config["default_allowed_actions"])
+        self.assertIn("hold_drag_release", config["unsafe_actions"])
+
     def test_lists_devices_through_discovery_boundary(self):
         discovery = FakeDiscovery()
         service = GameReverseWebService(
@@ -308,6 +351,17 @@ class TestGameReverseWebService(unittest.TestCase):
         self.assertEqual(len(self.runner.configs), 1)
         self.assertEqual(self.runner.configs[0].package_name, "com.example.game")
         self.assertTrue(os.path.exists(os.path.join(completed["session_dir"], "final_report.md")))
+
+    def test_start_run_uses_safe_defaults_when_allowed_actions_are_omitted(self):
+        service = self.make_service()
+        payload = self.valid_payload()
+        payload.pop("allowed_actions")
+
+        result = service.start_run(payload)
+        completed = self.wait_for_status(service, result["id"], "completed")
+
+        self.assertEqual(completed["status"], "completed")
+        self.assertEqual(self.runner.configs[0].allowed_actions, ["screenshot", "wait", "back"])
 
     def test_start_run_returns_before_slow_runner_finishes_and_records_events(self):
         self.tmpdir = tempfile.TemporaryDirectory()
@@ -425,6 +479,31 @@ class TestGameReverseWebService(unittest.TestCase):
         report = service.session_report(result["id"])
         self.assertIn("Codex completed through service", report["final_report"])
 
+    def test_web_service_runs_lightweight_executor_when_decider_is_injected(self):
+        self.tmpdir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmpdir.cleanup)
+        registry = create_default_registry(
+            FakeRunner(),
+            environ={},
+            codex_which=lambda command: None,
+            lightweight_decider=LightweightJsonDecider(),
+            lightweight_executor_factory=FakeRunnerExecutorFactory(self.tmpdir.name),
+        )
+        service = GameReverseWebService(
+            output_root=self.tmpdir.name,
+            runner=FakeRunner(),
+            executors=registry,
+        )
+        payload = self.valid_payload()
+        payload["runner"] = "lightweight"
+        payload["max_steps"] = 1
+
+        result = service.start_run(payload)
+        completed = self.wait_for_status(service, result["id"], "completed")
+
+        self.assertEqual(completed["runner"], "lightweight")
+        self.assertTrue(os.path.exists(os.path.join(completed["session_dir"], "final_report.md")))
+
     def test_rejects_unknown_runner(self):
         service = self.make_service()
         payload = self.valid_payload()
@@ -449,10 +528,26 @@ class TestGameReverseWebService(unittest.TestCase):
         with self.assertRaisesRegex(ValidationError, "not available"):
             service.start_run(payload)
 
+    def test_rejects_lightweight_runner_without_decider_as_unavailable(self):
+        service = self.make_service()
+        payload = self.valid_payload()
+        payload["runner"] = "lightweight"
+
+        with self.assertRaisesRegex(ValidationError, "not available"):
+            service.start_run(payload)
+
     def test_rejects_tap_without_explicit_opt_in(self):
         service = self.make_service()
         payload = self.valid_payload()
         payload["allowed_actions"] = ["screenshot", "wait", "tap"]
+
+        with self.assertRaisesRegex(ValidationError, "enable_unsafe_actions"):
+            service.start_run(payload)
+
+    def test_rejects_hold_drag_release_without_explicit_opt_in(self):
+        service = self.make_service()
+        payload = self.valid_payload()
+        payload["allowed_actions"] = ["screenshot", "wait", "hold_drag_release"]
 
         with self.assertRaisesRegex(ValidationError, "enable_unsafe_actions"):
             service.start_run(payload)

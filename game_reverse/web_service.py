@@ -12,7 +12,7 @@ from game_reverse.run_loop import run_loop
 from game_reverse.target_discovery import TargetDiscovery, TargetDiscoveryError
 
 
-UNSAFE_ACTIONS = {"tap", "swipe"}
+UNSAFE_ACTIONS = {"tap", "swipe", "hold_drag_release"}
 
 
 class ValidationError(ValueError):

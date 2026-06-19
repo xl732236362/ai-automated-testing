@@ -49,6 +49,14 @@ class TestGameReverseConfig(unittest.TestCase):
         self.assertEqual(config.llm_retry_count, 1)
         self.assertEqual(config.consecutive_failure_limit, 3)
 
+    def test_default_allowed_actions_do_not_include_hold_drag_release(self):
+        self.assertNotIn("hold_drag_release", DEFAULT_ALLOWED_ACTIONS)
+
+        path = self.write_config({"package_name": "com.example.game"})
+        config = load_config(path)
+
+        self.assertNotIn("hold_drag_release", config.allowed_actions)
+
     def test_missing_package_name_rejected(self):
         path = self.write_config({"device_uri": "Android://device"})
 

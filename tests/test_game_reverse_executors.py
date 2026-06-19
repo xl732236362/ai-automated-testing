@@ -113,10 +113,26 @@ class TestExecutorRegistry(unittest.TestCase):
 
         runners = registry.metadata()
 
-        self.assertEqual([runner["id"] for runner in runners], ["game_reverse", "codex_exec", "claude_print"])
+        self.assertEqual(
+            [runner["id"] for runner in runners],
+            ["game_reverse", "lightweight", "codex_exec", "claude_print"],
+        )
         self.assertTrue(runners[0]["available"])
-        self.assertTrue(runners[1]["available"])
-        self.assertFalse(runners[2]["available"])
+        self.assertFalse(runners[1]["available"])
+        self.assertTrue(runners[2]["available"])
+        self.assertFalse(runners[3]["available"])
+
+    def test_lightweight_runner_is_available_when_decider_is_injected(self):
+        registry = create_default_registry(
+            runner=lambda config: "session-dir",
+            environ={},
+            codex_which=lambda command: None,
+            lightweight_decider=object(),
+        )
+
+        runners = {runner["id"]: runner for runner in registry.metadata()}
+
+        self.assertTrue(runners["lightweight"]["available"])
 
     def test_codex_exec_is_available_by_default_when_binary_exists(self):
         registry = create_default_registry(
@@ -334,6 +350,27 @@ class TestExecutorCommandBuilders(unittest.TestCase):
             self.assertIn("actions.jsonl", prompt)
             self.assertIn("observations.jsonl", prompt)
             self.assertIn("screens/", prompt)
+
+    def test_prompt_includes_gesture_exploration_matrix_when_gestures_are_allowed(self):
+        payload = self.payload()
+        payload["allowed_actions"] = [
+            "screenshot",
+            "wait",
+            "tap",
+            "swipe",
+            "hold_drag_release",
+        ]
+
+        prompt = CodexExecExecutor(project_root=os.getcwd()).build_prompt(payload, config=None)
+
+        self.assertIn("Gesture exploration matrix", prompt)
+        self.assertIn("direct tap on visible objects", prompt)
+        self.assertIn("scene drag or swipe", prompt)
+        self.assertIn("tap the fire/action button", prompt)
+        self.assertIn("hold_drag_release", prompt)
+        self.assertIn("press the gameplay control", prompt)
+        self.assertIn("drag toward the target", prompt)
+        self.assertIn("release", prompt)
 
     def test_validate_repo_root_rejects_parent_directory(self):
         project_root = os.path.join(os.getcwd(), "project")

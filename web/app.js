@@ -12,10 +12,11 @@ const ACTION_LABELS = {
   back: "返回",
   tap: "点击",
   swipe: "滑动",
+  hold_drag_release: "按住拖放",
   error: "错误",
 };
 
-const UNSAFE_ACTIONS = ["tap", "swipe"];
+const UNSAFE_ACTIONS = ["tap", "swipe", "hold_drag_release"];
 
 document.addEventListener("DOMContentLoaded", () => {
   const root = document.getElementById("app");
@@ -24,9 +25,9 @@ document.addEventListener("DOMContentLoaded", () => {
   wireStartButton();
   wireUnsafeActionToggle();
   wireTargetConfigControls();
-  Promise.all([loadSample(sampleUrl), detectBackend()])
-    .then(([sample, health]) => {
-      currentData = mergeBackendHealth(sample, health);
+  Promise.all([loadSample(sampleUrl), detectBackend(), detectBackendConfig()])
+    .then(([sample, health, backendConfig]) => {
+      currentData = mergeBackendConfig(mergeBackendHealth(sample, health), backendConfig);
       selectedRunnerId = chooseInitialRunner(currentData.runners);
       renderConsole(currentData);
       updateBackendStatus();
@@ -39,6 +40,20 @@ function mergeBackendHealth(sample, health) {
     return sample;
   }
   return {...sample, runners: health.runners};
+}
+
+function mergeBackendConfig(data, backendConfig) {
+  if (!backendConfig) {
+    return data;
+  }
+  return {
+    ...data,
+    config: {
+      ...data.config,
+      output_root: backendConfig.output_root || data.config.output_root,
+      allowed_actions: backendConfig.default_allowed_actions || data.config.allowed_actions,
+    },
+  };
 }
 
 function chooseInitialRunner(runners) {
@@ -481,13 +496,26 @@ function detectBackend() {
     });
 }
 
+function detectBackendConfig() {
+  return fetch(`${API_BASE}/api/config`)
+    .then((response) => {
+      if (!response.ok) {
+        throw new Error(`配置不可用: ${response.status}`);
+      }
+      return response.json();
+    })
+    .catch(() => null);
+}
+
 function pollRun(runId) {
   return fetch(`${API_BASE}/api/runs/${encodeURIComponent(runId)}`)
     .then((response) => readJsonOrThrow(response, "读取运行状态失败"))
     .then((run) => {
       updateOutputsFromRun(run);
       setRunState(runStatusLabel(run.status), run.error || run.session_dir || run.id);
-      loadRunEvents(runId);
+      loadRunEvents(runId).then((events) => {
+        setRunState(describeRunState(run, events), run.error || run.session_dir || run.id);
+      });
 
       if (run.status === "queued" || run.status === "running") {
         pollTimer = window.setTimeout(() => pollRun(runId), 1000);
@@ -662,7 +690,7 @@ function renderEvents(events) {
   }
 
   log.replaceChildren(
-    ...events.map((event) => {
+    ...Array.from(events).reverse().map((event) => {
       const item = document.createElement("div");
       item.className = "event-item";
 
@@ -678,6 +706,9 @@ function renderEvents(events) {
 }
 
 function formatEventDetail(event) {
+  if (event.type === "runner_event") {
+    return formatRunnerEventDetail(event);
+  }
   if (event.message) {
     return event.message;
   }
@@ -687,6 +718,60 @@ function formatEventDetail(event) {
     return `第 ${event.step} 步 / 共 ${event.max_steps} 步${action}${result}`;
   }
   return event.error || event.session_dir || event.created_at || "";
+}
+
+function formatRunnerEventDetail(event) {
+  const rawItem = event.raw && event.raw.item ? event.raw.item : null;
+  if (!rawItem) {
+    return event.message || event.created_at || "";
+  }
+  if (rawItem.text) {
+    return rawItem.text;
+  }
+  if (rawItem.type === "command_execution") {
+    const status = rawItem.status || "";
+    const output = rawItem.aggregated_output ? compactText(rawItem.aggregated_output, 140) : "";
+    return [event.message, status, output].filter(Boolean).join(" · ");
+  }
+  return [event.message, rawItem.type, rawItem.status].filter(Boolean).join(" · ");
+}
+
+function describeRunState(run, events) {
+  if (!run || run.status !== "running") {
+    return runStatusLabel(run && run.status);
+  }
+
+  const latest = latestMeaningfulEvent(events);
+  if (!latest) {
+    return runStatusLabel(run.status);
+  }
+  if (latest.type === "run_started") {
+    return "运行中";
+  }
+  if (latest.type === "runner_event") {
+    const rawItem = latest.raw && latest.raw.item ? latest.raw.item : null;
+    if (rawItem && rawItem.type === "agent_message") {
+      return compactText(rawItem.text || "执行器正在分析", 28);
+    }
+    if (rawItem && rawItem.type === "command_execution") {
+      return rawItem.status === "in_progress" ? "执行命令中" : "命令已返回";
+    }
+  }
+  return eventTypeLabel(latest.type);
+}
+
+function latestMeaningfulEvent(events) {
+  return Array.from(events || [])
+    .reverse()
+    .find((event) => event.type !== "run_queued" && event.type !== "session_prepared");
+}
+
+function compactText(value, maxLength) {
+  const text = String(value || "").replace(/\s+/g, " ").trim();
+  if (text.length <= maxLength) {
+    return text;
+  }
+  return `${text.slice(0, maxLength - 1)}…`;
 }
 
 function renderSessions(sessions) {

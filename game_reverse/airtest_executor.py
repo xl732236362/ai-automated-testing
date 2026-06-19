@@ -27,6 +27,9 @@ class AirtestExecutor:
                 duration=action.get("duration", 0.5),
             )
             return "executed"
+        if action_type == "hold_drag_release":
+            self._hold_drag_release(action)
+            return "executed"
         if action_type == "back":
             self.api.keyevent("BACK")
             return "executed"
@@ -34,6 +37,23 @@ class AirtestExecutor:
             self.api.sleep(action.get("seconds", 1))
             return "executed"
         raise ValueError("unsupported action")
+
+    def _hold_drag_release(self, action):
+        start = (action["x1"], action["y1"])
+        end = (action["x2"], action["y2"])
+        hold_seconds = action.get("hold_seconds", 0.3)
+        duration = action.get("duration", 0.5)
+
+        if all(hasattr(self.api, name) for name in ("touch_down", "touch_move", "touch_up")):
+            self.api.touch_down(start)
+            try:
+                self.api.sleep(hold_seconds)
+                self.api.touch_move(end, duration=duration)
+            finally:
+                self.api.touch_up(end)
+            return
+
+        self.api.swipe(start, end, duration=hold_seconds + duration)
 
 
 def _load_airtest_api():
