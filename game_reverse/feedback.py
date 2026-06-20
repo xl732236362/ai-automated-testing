@@ -30,6 +30,7 @@ def classify_feedback(before=None, after=None, before_screen_path=None, after_sc
     before_text = _observation_text(before)
     after_text = _observation_text(after)
     visual_diff_score = _visual_diff_score(before, after, before_screen_path, after_screen_path)
+    has_visual_evidence = _has_visual_evidence(before, after, before_screen_path, after_screen_path)
     ocr_changed = _text_items(before, "ocr") != _text_items(after, "ocr")
     ui_changed = _text_items(before, "ui_nodes") != _text_items(after, "ui_nodes")
     base = {
@@ -54,9 +55,9 @@ def classify_feedback(before=None, after=None, before_screen_path=None, after_sc
         return _feedback("level_failed", _evidence(after_text, "level failed"), base)
     if _has_any(after_text, POPUP_KEYWORDS):
         return _feedback("popup_opened", _evidence(after_text, "popup opened"), base)
-    if _has_counter_change(after_text) and before_text != after_text:
+    if _has_counter_change(after_text) and before_text != after_text and not _unchanged_visual(has_visual_evidence, visual_diff_score):
         return _feedback("counter_changed", _evidence(after_text, "counter"), base)
-    if _has_tray_change(after_text) and before_text != after_text:
+    if _has_tray_change(after_text) and before_text != after_text and not _unchanged_visual(has_visual_evidence, visual_diff_score):
         return _feedback("tray_changed", _evidence(after_text, "tray"), base)
     if ocr_changed:
         return _feedback("ocr_changed", "OCR text changed", base)
@@ -166,10 +167,6 @@ def _text_items(observation, key):
 
 
 def _visual_diff_score(before, after, before_screen_path, after_screen_path):
-    before_hash = (before or {}).get("screenshot_hash")
-    after_hash = (after or {}).get("screenshot_hash")
-    if before_hash and after_hash:
-        return 0.0 if before_hash == after_hash else 1.0
     if before_screen_path and after_screen_path:
         try:
             with open(before_screen_path, "rb") as before_file:
@@ -179,4 +176,19 @@ def _visual_diff_score(before, after, before_screen_path, after_screen_path):
         except OSError:
             return 0.0
         return 0.0 if before_bytes == after_bytes else 1.0
+    before_hash = (before or {}).get("screenshot_hash")
+    after_hash = (after or {}).get("screenshot_hash")
+    if before_hash and after_hash:
+        return 0.0 if before_hash == after_hash else 1.0
     return 0.0
+
+
+def _has_visual_evidence(before, after, before_screen_path, after_screen_path):
+    return bool(
+        ((before or {}).get("screenshot_hash") and (after or {}).get("screenshot_hash"))
+        or (before_screen_path and after_screen_path)
+    )
+
+
+def _unchanged_visual(has_visual_evidence, visual_diff_score):
+    return has_visual_evidence and visual_diff_score == 0.0

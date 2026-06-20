@@ -42,7 +42,6 @@ def run_loop(config, executor=None, decider=None, session_name=None, context=Non
     recent_actions = []
     feedback_history = []
     previous_observation = None
-    previous_screen_path = None
     state_graph = StateGraph()
     affordance_memory = AffordanceMemory()
     failure_count = 0
@@ -93,6 +92,13 @@ def run_loop(config, executor=None, decider=None, session_name=None, context=Non
                     skill_result = None
                 else:
                     observation_record = base_observation_record
+                    post_screen_path, relative_post_screen, post_screenshot_hash = _capture_post_action_screen(
+                        executor,
+                        journal,
+                        step,
+                    )
+                    observation_record["post_action_screen"] = relative_post_screen
+                    observation_record["post_action_screenshot_hash"] = post_screenshot_hash
                     state_update = _update_state_and_affordances(
                         state_graph,
                         affordance_memory,
@@ -106,6 +112,7 @@ def run_loop(config, executor=None, decider=None, session_name=None, context=Non
                     action_record = {
                         "step": step,
                         "screen": relative_screen,
+                        "post_action_screen": relative_post_screen,
                         "mission_type": config.mission.type,
                         "action": {"type": "skill", "name": skill_result["skill_name"]},
                         "reason": "replayed skill %s" % skill_result["skill_name"],
@@ -115,8 +122,8 @@ def run_loop(config, executor=None, decider=None, session_name=None, context=Non
                     feedback = _record_feedback_and_artifacts(
                         previous_observation,
                         observation_record,
-                        previous_screen_path,
                         screen_path,
+                        post_screen_path,
                         action_record,
                         transition,
                         state_update,
@@ -149,7 +156,6 @@ def run_loop(config, executor=None, decider=None, session_name=None, context=Non
                     )
                     recent_actions.append(action_record)
                     previous_observation = observation_record
-                    previous_screen_path = screen_path
                     failure_count = 0
                     continue
             decision = decider.decide(
@@ -162,10 +168,16 @@ def run_loop(config, executor=None, decider=None, session_name=None, context=Non
             if action["type"] == "screenshot":
                 action = {"type": "wait", "seconds": 1}
             result = executor.execute(action, screen_path)
+            post_screen_path, relative_post_screen, post_screenshot_hash = _capture_post_action_screen(
+                executor,
+                journal,
+                step,
+            )
 
             action_record = {
                 "step": step,
                 "screen": relative_screen,
+                "post_action_screen": relative_post_screen,
                 "mission_type": config.mission.type,
                 "action": action,
                 "reason": decision.get("reason", ""),
@@ -180,6 +192,9 @@ def run_loop(config, executor=None, decider=None, session_name=None, context=Non
                 "screenshot_tags": decision.get("screenshot_tags", []),
                 "risks": decision.get("risks", []),
                 "screenshot_hash": screenshot_hash,
+                "pre_action_screenshot_hash": screenshot_hash,
+                "post_action_screenshot_hash": post_screenshot_hash,
+                "post_action_screen": relative_post_screen,
                 "ocr": decision.get("ocr", []),
                 "ui_nodes": decision.get("ui_nodes", []),
                 "visual_regions": decision.get("visual_regions", []),
@@ -199,8 +214,8 @@ def run_loop(config, executor=None, decider=None, session_name=None, context=Non
             feedback = _record_feedback_and_artifacts(
                 previous_observation,
                 observation_record,
-                previous_screen_path,
                 screen_path,
+                post_screen_path,
                 action_record,
                 transition,
                 state_update,
@@ -234,7 +249,6 @@ def run_loop(config, executor=None, decider=None, session_name=None, context=Non
             )
             recent_actions.append(action_record)
             previous_observation = observation_record
-            previous_screen_path = screen_path
             failure_count = 0
         except Exception as exc:
             failure_count += 1
@@ -296,6 +310,13 @@ def _emit_context_event(context, event_type, **extra):
     emit_event = getattr(context, "emit_event", None)
     if emit_event is not None:
         emit_event(event_type, **extra)
+
+
+def _capture_post_action_screen(executor, journal, step):
+    post_screen_path = journal.post_action_screen_path(step)
+    executor.execute({"type": "screenshot"}, post_screen_path)
+    relative_post_screen = os.path.relpath(post_screen_path, journal.session_dir)
+    return post_screen_path, relative_post_screen, _file_sha256(post_screen_path)
 
 
 def _create_profile_store(config):
@@ -371,8 +392,8 @@ def _try_skill(
 def _record_feedback_and_artifacts(
     previous_observation,
     observation_record,
-    previous_screen_path,
-    screen_path,
+    pre_action_screen_path,
+    post_action_screen_path,
     action_record,
     transition,
     state_update,
@@ -387,8 +408,8 @@ def _record_feedback_and_artifacts(
     feedback = classify_feedback(
         previous_observation,
         observation_record,
-        before_screen_path=previous_screen_path,
-        after_screen_path=screen_path,
+        before_screen_path=pre_action_screen_path,
+        after_screen_path=post_action_screen_path,
     )
     feedback["action_type"] = action_record["action"]["type"]
     feedback["state_id"] = state_update["state_id"]

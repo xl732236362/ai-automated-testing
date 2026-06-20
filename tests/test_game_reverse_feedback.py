@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 """Tests for gameplay feedback classification."""
 
+import os
+import tempfile
 import unittest
 
 from game_reverse.feedback import classify_feedback, recommend_next_strategy
@@ -41,6 +43,25 @@ class TestGameReverseFeedback(unittest.TestCase):
         self.assertEqual(feedback["result"], "visual_changed")
         self.assertGreater(feedback["visual_diff_score"], 0)
         self.assertEqual(feedback["confidence"], "medium")
+
+    def test_prefers_explicit_screenshot_paths_for_action_boundary(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            before_path = os.path.join(tmpdir, "before.png")
+            after_path = os.path.join(tmpdir, "after.png")
+            with open(before_path, "wb") as before_file:
+                before_file.write(b"same screen")
+            with open(after_path, "wb") as after_file:
+                after_file.write(b"same screen")
+
+            feedback = classify_feedback(
+                before={"screen_summary": "previous screen", "screenshot_hash": "sha256:old"},
+                after={"screen_summary": "milk counter changed from 3 to 2", "screenshot_hash": "sha256:new"},
+                before_screen_path=before_path,
+                after_screen_path=after_path,
+            )
+
+        self.assertEqual(feedback["result"], "no_visible_change")
+        self.assertEqual(feedback["visual_diff_score"], 0.0)
 
     def test_classifies_ocr_and_ui_changes(self):
         feedback = classify_feedback(

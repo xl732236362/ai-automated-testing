@@ -66,6 +66,24 @@ class ByteChangingScreenshotExecutor(FakeExecutor):
         return "executed"
 
 
+class StaticScreenshotCounterDecider:
+    def __init__(self):
+        self.calls = 0
+
+    def decide(self, screen_path, mission, recent_actions, mission_draft):
+        self.calls += 1
+        summary = "milk counter 3" if self.calls == 1 else "milk counter changed from 3 to 2"
+        return {
+            "screen_summary": summary,
+            "state": "gameplay",
+            "action": {"type": "wait", "seconds": 0},
+            "reason": "verify post-action feedback",
+            "new_findings": [],
+            "screenshot_tags": [],
+            "risks": [],
+        }
+
+
 class FakeDecider:
     def __init__(self):
         self.calls = 0
@@ -227,7 +245,32 @@ class TestRunLoop(unittest.TestCase):
         self.assertEqual(progress["max_steps"], 1)
         self.assertEqual(progress["action_type"], "wait")
 
-    def test_records_feedback_result_in_action_records(self):
+    def test_records_visual_feedback_result_in_action_records(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config = GameReverseConfig(
+                device_uri="Android:///",
+                package_name="com.example.game",
+                max_steps=2,
+                output_root=tmpdir,
+                profile_enabled=False,
+                allowed_actions=["screenshot", "wait"],
+                mission=Mission(type="free_explore", goal="探索任务", targets=["玩法"]),
+            )
+
+            session_dir = run_loop(
+                config,
+                executor=ByteChangingScreenshotExecutor(),
+                decider=ChangingSummaryDecider(),
+                session_name="feedback-session",
+            )
+
+            with open(os.path.join(session_dir, "actions.jsonl"), encoding="utf-8") as action_file:
+                action_lines = action_file.readlines()
+
+        self.assertIn('"feedback_result": "counter_changed"', action_lines[-1])
+        self.assertIn('"post_action_screen": "screens\\\\post_step_0002.png"', action_lines[-1])
+
+    def test_uses_post_action_screenshot_for_feedback(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             config = GameReverseConfig(
                 device_uri="Android:///",
@@ -242,14 +285,21 @@ class TestRunLoop(unittest.TestCase):
             session_dir = run_loop(
                 config,
                 executor=FakeExecutor(),
-                decider=ChangingSummaryDecider(),
-                session_name="feedback-session",
+                decider=StaticScreenshotCounterDecider(),
+                session_name="post-action-feedback-session",
             )
 
             with open(os.path.join(session_dir, "actions.jsonl"), encoding="utf-8") as action_file:
-                action_lines = action_file.readlines()
+                actions = [json.loads(line) for line in action_file if line.strip()]
+            with open(os.path.join(session_dir, "observations.jsonl"), encoding="utf-8") as observation_file:
+                observations = [json.loads(line) for line in observation_file if line.strip()]
+            post_screen_exists = os.path.exists(os.path.join(session_dir, "screens", "post_step_0002.png"))
 
-        self.assertIn('"feedback_result": "counter_changed"', action_lines[-1])
+        self.assertEqual(actions[-1]["feedback_result"], "no_visible_change")
+        self.assertEqual(actions[-1]["visual_diff_score"], 0.0)
+        self.assertIn("post_step_0002.png", actions[-1]["post_action_screen"])
+        self.assertIn("post_step_0002.png", observations[-1]["post_action_screen"])
+        self.assertTrue(post_screen_exists)
 
     def test_writes_state_graph_artifacts_for_run(self):
         with tempfile.TemporaryDirectory() as tmpdir:

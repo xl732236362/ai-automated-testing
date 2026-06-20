@@ -38,6 +38,9 @@ class Journal:
     def screen_path(self, step):
         return os.path.join(self.screens_dir, "step_%04d.png" % step)
 
+    def post_action_screen_path(self, step):
+        return os.path.join(self.screens_dir, "post_step_%04d.png" % step)
+
     def write_action(self, record):
         self._append_jsonl("actions.jsonl", record)
 
