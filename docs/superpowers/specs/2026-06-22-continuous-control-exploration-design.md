@@ -50,6 +50,7 @@ This upgrade includes:
 - Feedback categories for intermediate continuous-control progress.
 - Skill mining that stores parameterized control strategies instead of only fixed coordinates.
 - Web run controls that can explicitly enable continuous unsafe actions.
+- A minimal visual-anchor schema before any LLM-facing composite continuous action is enabled.
 - Tests covering action validation, executor behavior, loop orchestration, feedback, and skill persistence.
 
 This upgrade does not include:
@@ -89,9 +90,30 @@ RunLoop
   -> SkillLibrary
 ```
 
-### Low-Level Pointer Actions
+### Action Boundary
 
-Extend the action schema with primitive pointer actions:
+Continuous exploration uses two related but separate command surfaces:
+
+- External actions: actions that may appear in config, Web payloads, LLM decisions, and `allowed_actions`.
+- Internal pointer commands: lower-level commands that only controllers may send to the executor while a continuous session is active.
+
+External actions should include standard discrete actions and high-level continuous composites:
+
+```text
+screenshot, wait, back, tap, swipe, hold_drag_release, aim_fire
+```
+
+Internal pointer commands should not be exposed through Web payloads, LLM JSON, or persisted `allowed_actions`:
+
+```text
+touch_down, touch_move, touch_hold, touch_up
+```
+
+This split keeps low-level pointer state under deterministic controller ownership and avoids dangling touches caused by direct model output.
+
+### Low-Level Pointer Commands
+
+Extend the executor boundary with primitive pointer commands:
 
 ```json
 {"type": "touch_down", "x": 450, "y": 1175}
@@ -100,9 +122,9 @@ Extend the action schema with primitive pointer actions:
 {"type": "touch_up", "x": 420, "y": 980}
 ```
 
-These actions are internal by default. The LLM should not freely emit them in normal mode until the controller has opened a continuous-control session. This keeps the safety surface smaller and prevents dangling touches.
+These commands are internal-only. The LLM should not emit them, Web/API payloads should reject them, and profiles should not store them as replayable public actions. Controllers may log them as session events for debugging.
 
-The existing `tap`, `swipe`, and `hold_drag_release` actions remain supported and can be implemented using the same primitives.
+The existing `tap`, `swipe`, and `hold_drag_release` actions remain supported and may be implemented using the same executor primitives internally.
 
 ### Continuous Action Session
 
@@ -121,6 +143,13 @@ Introduce a session object that tracks an active pointer:
 ```
 
 The run loop must guarantee cleanup. If a controller error, validator rejection, user stop, or consecutive failure occurs while a pointer is down, the executor must release the pointer before the run exits.
+
+Cleanup responsibilities:
+
+- `ContinuousControlController` owns the active session state and calls release during normal completion or controller errors.
+- `AirtestExecutor` exposes a best-effort `release_active_pointer()` cleanup hook for defensive release.
+- `RunLoop` calls controller/executor cleanup from a `finally` path before writing final artifacts or returning.
+- `Journal` records cleanup outcomes in `control_sessions.jsonl` with `control_released_safely` or a failure reason.
 
 ### Composite Continuous Actions
 
@@ -150,7 +179,7 @@ Add high-level actions that are safe to expose to the LLM:
 }
 ```
 
-The first phase should implement `aim_fire` and map it internally to touch primitives.
+The first composite implementation should be `aim_fire`, after the minimal visual-anchor schema exists, and it should map internally to pointer commands.
 
 ## Visual State Model
 
@@ -267,6 +296,22 @@ Add continuous-control feedback labels:
 
 These labels give the system partial rewards. It can learn that a sequence is improving even before final success.
 
+The new labels should be derived from existing evidence instead of replacing the current feedback vocabulary:
+
+- `target_collected` can be derived from `counter_changed`, a target object disappearing, a verified target count decrease, or a useful tray change.
+- `wrong_target_collected` can be derived from `tray_changed` when the selected object does not match the active target hypothesis.
+- `control_attempt_failed` can wrap repeated `no_visible_change` or movement that does not improve cursor/target distance.
+- Existing labels such as `counter_changed`, `tray_changed`, `visual_changed`, and `no_visible_change` should remain in artifacts for compatibility.
+
+Artifacts may record both the low-level feedback result and the derived continuous-control label:
+
+```json
+{
+  "result": "counter_changed",
+  "control_feedback": "target_collected"
+}
+```
+
 ## Skill Learning
 
 Successful continuous attempts should be mined into parameterized skills:
@@ -307,6 +352,14 @@ Continuous actions are more powerful than taps. They need explicit gates:
 - Continuous sessions cannot execute shell, install, payment, login, or account-entry flows.
 
 The default Web console should keep continuous actions disabled unless the operator opts in.
+
+Backend validation should be explicit:
+
+- `tap`, `swipe`, and `hold_drag_release` require `enable_unsafe_actions=true`.
+- `aim_fire` requires both `enable_unsafe_actions=true` and `enable_continuous_actions=true`.
+- `touch_down`, `touch_move`, `touch_hold`, and `touch_up` are rejected in external `allowed_actions` and LLM decisions.
+- Internal pointer commands may only be issued by `ContinuousControlController` after an external composite action has passed validation.
+- If `enable_continuous_actions=false`, the planner may still record a continuous-control hypothesis, but it must not execute it.
 
 ## Web Console Impact
 
@@ -354,40 +407,64 @@ Continuous runs should write new or extended artifacts:
 
 The existing artifacts remain readable by older tooling. New fields should be additive.
 
+Intermediate screenshots should use stable names:
+
+```text
+screens/control_step_0012_hold_00.png
+screens/control_step_0012_move_01.png
+screens/control_step_0012_move_02.png
+screens/control_step_0012_release_03.png
+```
+
+Each `control_sessions.jsonl` event should include the screenshot path when one was captured:
+
+```json
+{
+  "step": 12,
+  "event": "move_observed",
+  "command": {"type": "touch_move", "x": 390, "y": 900, "duration": 0.2},
+  "screen": "screens/control_step_0012_move_01.png",
+  "control_feedback": "cursor_closer_to_target"
+}
+```
+
 ## Phase Plan
 
 ### Phase 1: Pointer Primitives
 
-Add validation and executor support for `touch_down`, `touch_move`, `touch_hold`, and `touch_up`.
+Add executor support for internal `touch_down`, `touch_move`, `touch_hold`, and `touch_up` pointer commands.
 
 Acceptance:
 
-- Primitive actions validate coordinates and durations.
+- Internal pointer commands validate coordinates and durations.
+- External `allowed_actions` and LLM decisions reject raw `touch_*` commands.
 - Executor maps primitives to Airtest touch APIs where available.
-- Any failed sequence releases the pointer.
+- The executor exposes best-effort `release_active_pointer()` cleanup.
 - Existing `tap`, `swipe`, and `hold_drag_release` behavior remains compatible.
 
-### Phase 2: `aim_fire` Composite Action
+### Phase 2: Minimal Visual Anchor Schema
+
+Extend the LLM prompt and schema with the minimum fields needed for continuous composites: controls, cursors, targets, and control hypotheses.
+
+Acceptance:
+
+- Prompt asks for visual anchors when direct actions fail or when an aiming/dragging interface is visible.
+- Parsed decisions include normalized anchors.
+- Old decisions without anchors still parse.
+- Recent actions include existing feedback and any derived continuous-control feedback.
+- The planner can record a continuous-control hypothesis without executing it when continuous actions are disabled.
+
+### Phase 3: `aim_fire` Composite Action
 
 Add a high-level `aim_fire` action that performs a bounded hold-move-release sequence.
 
 Acceptance:
 
-- The LLM can emit `aim_fire` only when continuous actions are enabled.
+- The LLM can emit `aim_fire` only after the minimal visual-anchor schema exists and continuous actions are enabled.
 - Validation requires control and target points.
+- `aim_fire` requires both `enable_unsafe_actions=true` and `enable_continuous_actions=true`.
 - The executor records internal events.
 - Post-action feedback works the same way as existing actions.
-
-### Phase 3: Visual Anchor Schema
-
-Extend the LLM prompt and schema with controls, cursors, targets, and control hypotheses.
-
-Acceptance:
-
-- Prompt asks for visual anchors when direct actions fail.
-- Parsed decisions include normalized anchors.
-- Recent actions include continuous feedback in compact form.
-- Tests prove old decisions still parse.
 
 ### Phase 4: AimController Closed Loop
 
@@ -395,10 +472,12 @@ Add a controller that can observe while holding and fine-adjust before release.
 
 Acceptance:
 
-- Controller captures intermediate screenshots.
+- Controller captures intermediate screenshots using `screens/control_step_XXXX_*.png` names.
 - Controller adjusts toward the target for a bounded number of moves.
 - Controller emits intermediate feedback.
+- Controller writes `control_sessions.jsonl`.
 - Controller always releases on error.
+- Run loop calls cleanup before finalizing when a controller exists.
 
 ### Phase 5: Continuous Skill Mining
 
@@ -427,11 +506,21 @@ Acceptance:
 - The planner can choose a controller based on hypotheses and feedback.
 - Skills remain parameterized by roles and anchors.
 
+### Phase 7: Multi-Controller Expansion
+
+Expand to multi-touch and more advanced controllers only after single-pointer continuous sessions are stable.
+
+Acceptance:
+
+- Multi-touch remains disabled by default.
+- Each new controller has explicit safety limits and cleanup behavior.
+- Existing single-pointer `aim_fire` behavior remains unchanged.
+
 ## Testing Strategy
 
 Unit tests:
 
-- Action validation for primitive and composite actions.
+- Internal pointer command validation and external composite action validation.
 - Executor primitive call order.
 - Cleanup behavior on errors.
 - Prompt/schema parsing for visual anchors.
