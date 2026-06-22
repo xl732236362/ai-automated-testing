@@ -123,6 +123,34 @@ class TestGameReverseJournal(unittest.TestCase):
         self.assertEqual(event["event"], "subgoal_progress")
         self.assertEqual(goals["main_goal"], "Explore")
 
+    def test_writes_feedback_and_run_summary_artifacts(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            journal = Journal.create(tmpdir, session_name="test-session")
+            journal.write_feedback(
+                {
+                    "step": 1,
+                    "result": "visual_changed",
+                    "evidence": "screenshot hash changed",
+                }
+            )
+            journal.write_run_summary(
+                {
+                    "session_id": "test-session",
+                    "stop_reason": "max_steps_reached",
+                    "steps_completed": 1,
+                }
+            )
+
+            feedback_path = os.path.join(journal.session_dir, "feedback.jsonl")
+            summary_path = os.path.join(journal.session_dir, "run_summary.json")
+            with open(feedback_path, "r", encoding="utf-8") as feedback_file:
+                feedback = json.loads(feedback_file.readline())
+            with open(summary_path, "r", encoding="utf-8") as summary_file:
+                summary = json.load(summary_file)
+
+        self.assertEqual(feedback["result"], "visual_changed")
+        self.assertEqual(summary["session_id"], "test-session")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -41,6 +41,7 @@ def run_loop(config, executor=None, decider=None, session_name=None, context=Non
 
     recent_actions = []
     feedback_history = []
+    completed_steps = []
     previous_observation = None
     state_graph = StateGraph()
     affordance_memory = AffordanceMemory()
@@ -155,6 +156,7 @@ def run_loop(config, executor=None, decider=None, session_name=None, context=Non
                         message="第 %s 步 / 共 %s 步：skill" % (step, config.max_steps),
                     )
                     recent_actions.append(action_record)
+                    completed_steps.append(action_record)
                     previous_observation = observation_record
                     failure_count = 0
                     continue
@@ -248,6 +250,7 @@ def run_loop(config, executor=None, decider=None, session_name=None, context=Non
                 message="第 %s 步 / 共 %s 步：%s" % (step, config.max_steps, action["type"]),
             )
             recent_actions.append(action_record)
+            completed_steps.append(action_record)
             previous_observation = observation_record
             failure_count = 0
         except Exception as exc:
@@ -289,6 +292,16 @@ def run_loop(config, executor=None, decider=None, session_name=None, context=Non
     if profile_store is not None:
         profile_store.update_json("state_map.json", state_graph.to_state_map())
         profile_store.update_json("affordances.json", affordance_memory.to_affordances())
+    journal.write_run_summary(
+        _run_summary(
+            session_name,
+            stop_reason,
+            completed_steps,
+            state_graph,
+            affordance_memory,
+            goal_planner,
+        )
+    )
     write_final_report(
         journal.session_dir,
         journal.read_mission_draft(),
@@ -440,6 +453,15 @@ def _record_feedback_and_artifacts(
     observation_record["recovery_reason"] = strategy["reason"]
     goal_event = goal_planner.update(observation_record, action_record, feedback)
     _attach_goal_context(action_record, observation_record, goal_planner, goal_event)
+    journal.write_feedback(
+        _feedback_record(
+            observation_record,
+            action_record,
+            transition,
+            feedback,
+            strategy,
+        )
+    )
     journal.write_action(action_record)
     journal.write_observation(observation_record)
     journal.write_state_transition(transition)
@@ -502,16 +524,11 @@ def _update_profile(
         _profile_safety_rules(profile_store, observation_record, feedback),
     )
     profile_store.append_memory(
-        {
-            "event": "step",
-            "session_name": session_name,
-            "step": observation_record["step"],
-            "state_id": observation_record.get("state_id"),
-            "action": action_record.get("action"),
-            "feedback_result": feedback.get("result"),
-            "transition": transition,
-            "screen": observation_record.get("screen"),
-        }
+        _profile_step_event(session_name, observation_record, action_record, transition, feedback)
+    )
+    profile_store.append_trace(
+        session_name,
+        _profile_step_event(session_name, observation_record, action_record, transition, feedback),
     )
 
 
@@ -535,6 +552,64 @@ def _profile_safety_rules(profile_store, observation_record, feedback):
             }
         )
     return safety_rules
+
+
+def _feedback_record(observation_record, action_record, transition, feedback, strategy):
+    return {
+        "step": observation_record.get("step"),
+        "state_id": observation_record.get("state_id"),
+        "state_transition": transition.get("classification"),
+        "action": action_record.get("action"),
+        "action_source": action_record.get("action_source"),
+        "result": feedback.get("result"),
+        "evidence": feedback.get("evidence"),
+        "confidence": feedback.get("confidence"),
+        "visual_diff_score": feedback.get("visual_diff_score"),
+        "ocr_changed": feedback.get("ocr_changed"),
+        "ui_changed": feedback.get("ui_changed"),
+        "safety_label": feedback.get("safety_label"),
+        "next_strategy": strategy.get("next_strategy"),
+        "recommended_actions": strategy.get("recommended_actions"),
+        "recovery_reason": strategy.get("reason"),
+    }
+
+
+def _profile_step_event(session_name, observation_record, action_record, transition, feedback):
+    return {
+        "event": "step",
+        "session_name": session_name,
+        "step": observation_record["step"],
+        "state_id": observation_record.get("state_id"),
+        "action": action_record.get("action"),
+        "feedback_result": feedback.get("result"),
+        "transition": transition,
+        "screen": observation_record.get("screen"),
+        "post_action_screen": observation_record.get("post_action_screen"),
+    }
+
+
+def _run_summary(session_name, stop_reason, completed_steps, state_graph, affordance_memory, goal_planner):
+    action_counts = {}
+    feedback_counts = {}
+    for action_record in completed_steps:
+        action_type = (action_record.get("action") or {}).get("type", "unknown")
+        action_counts[action_type] = action_counts.get(action_type, 0) + 1
+        feedback_result = action_record.get("feedback_result", "unknown")
+        feedback_counts[feedback_result] = feedback_counts.get(feedback_result, 0) + 1
+    state_map = state_graph.to_state_map()
+    affordances = affordance_memory.to_affordances()
+    return {
+        "version": 1,
+        "session_id": session_name,
+        "stop_reason": stop_reason,
+        "steps_completed": len(completed_steps),
+        "action_counts": action_counts,
+        "feedback_counts": feedback_counts,
+        "states_discovered": len(state_map.get("states", {})),
+        "transitions_discovered": len(state_map.get("transitions", [])),
+        "affordances_discovered": sum(len(items) for items in affordances.get("states", {}).values()),
+        "final_goals": goal_planner.to_goals(),
+    }
 
 
 def _read_screen_size(screen_path):

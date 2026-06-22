@@ -465,6 +465,9 @@ class TestRunLoop(unittest.TestCase):
                 safety_rules = json.load(safety_file)
             with open(os.path.join(profile_dir, "memory.jsonl"), encoding="utf-8") as memory_file:
                 memory_events = [json.loads(line) for line in memory_file if line.strip()]
+            trace_path = os.path.join(profile_dir, "traces", "profile-run-two.jsonl")
+            with open(trace_path, encoding="utf-8") as trace_file:
+                trace_events = [json.loads(line) for line in trace_file if line.strip()]
 
         self.assertEqual(profile["package_name"], "com.example.game")
         self.assertTrue(state_map["states"])
@@ -472,6 +475,37 @@ class TestRunLoop(unittest.TestCase):
         self.assertIn("sensitive_states", safety_rules)
         self.assertGreaterEqual(len(memory_events), 2)
         self.assertEqual({event["session_name"] for event in memory_events}, {"profile-run-one", "profile-run-two"})
+        self.assertEqual(trace_events[0]["session_name"], "profile-run-two")
+
+    def test_writes_feedback_and_run_summary_for_run(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config = GameReverseConfig(
+                device_uri="Android:///",
+                package_name="com.example.game",
+                max_steps=2,
+                output_root=tmpdir,
+                profile_enabled=False,
+                allowed_actions=["screenshot", "wait"],
+                mission=Mission(type="free_explore", goal="Explore safely", targets=["玩法"]),
+            )
+
+            session_dir = run_loop(
+                config,
+                executor=FakeExecutor(),
+                decider=FakeDecider(),
+                session_name="summary-session",
+            )
+
+            with open(os.path.join(session_dir, "feedback.jsonl"), encoding="utf-8") as feedback_file:
+                feedback_events = [json.loads(line) for line in feedback_file if line.strip()]
+            with open(os.path.join(session_dir, "run_summary.json"), encoding="utf-8") as summary_file:
+                summary = json.load(summary_file)
+
+        self.assertEqual(len(feedback_events), 2)
+        self.assertEqual(summary["session_id"], "summary-session")
+        self.assertEqual(summary["stop_reason"], "max_steps_reached")
+        self.assertEqual(summary["steps_completed"], 2)
+        self.assertEqual(summary["action_counts"]["wait"], 2)
 
     def test_writes_goal_artifacts_for_run(self):
         with tempfile.TemporaryDirectory() as tmpdir:

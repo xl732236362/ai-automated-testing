@@ -55,6 +55,7 @@ class ProfileStore:
             },
         )
         self._ensure_file("memory.jsonl")
+        os.makedirs(os.path.join(self.profile_dir, "traces"), exist_ok=True)
         return self
 
     def load_json(self, filename, default):
@@ -71,7 +72,7 @@ class ProfileStore:
         with open(temp_path, "w", encoding="utf-8") as json_file:
             json.dump(payload, json_file, ensure_ascii=False, indent=2, sort_keys=True)
             json_file.write("\n")
-        os.replace(temp_path, path)
+        _replace_with_retry(temp_path, path)
 
     def append_memory(self, event):
         os.makedirs(self.profile_dir, exist_ok=True)
@@ -80,6 +81,16 @@ class ProfileStore:
         record.setdefault("timestamp", _timestamp())
         with open(path, "a", encoding="utf-8") as memory_file:
             memory_file.write(json.dumps(record, ensure_ascii=False, sort_keys=True) + "\n")
+
+    def append_trace(self, run_id, event):
+        trace_dir = os.path.join(self.profile_dir, "traces")
+        os.makedirs(trace_dir, exist_ok=True)
+        safe_run_id = sanitize_app_id(run_id)
+        path = os.path.join(trace_dir, "%s.jsonl" % safe_run_id)
+        record = dict(event)
+        record.setdefault("timestamp", _timestamp())
+        with open(path, "a", encoding="utf-8") as trace_file:
+            trace_file.write(json.dumps(record, ensure_ascii=False, sort_keys=True) + "\n")
 
     def _ensure_json(self, filename, default):
         path = os.path.join(self.profile_dir, filename)
@@ -99,3 +110,17 @@ def sanitize_app_id(value):
 
 def _timestamp():
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+
+
+def _replace_with_retry(source, destination, attempts=3, delay_seconds=0.05):
+    last_error = None
+    for attempt in range(attempts):
+        try:
+            os.replace(source, destination)
+            return
+        except PermissionError as exc:
+            last_error = exc
+            if attempt == attempts - 1:
+                break
+            time.sleep(delay_seconds)
+    raise last_error

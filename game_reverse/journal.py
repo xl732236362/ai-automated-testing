@@ -23,6 +23,7 @@ class Journal:
             "state_transitions.jsonl",
             "skill_attempts.jsonl",
             "goal_events.jsonl",
+            "feedback.jsonl",
         ):
             path = os.path.join(session_dir, filename)
             if not os.path.exists(path):
@@ -56,6 +57,9 @@ class Journal:
     def write_goal_event(self, record):
         self._append_jsonl("goal_events.jsonl", record)
 
+    def write_feedback(self, record):
+        self._append_jsonl("feedback.jsonl", record)
+
     def write_state_map(self, state_map):
         path = os.path.join(self.session_dir, "state_map.json")
         with open(path, "w", encoding="utf-8") as state_map_file:
@@ -73,6 +77,12 @@ class Journal:
         with open(path, "w", encoding="utf-8") as goals_file:
             json.dump(goals, goals_file, ensure_ascii=False, indent=2, sort_keys=True)
             goals_file.write("\n")
+
+    def write_run_summary(self, summary):
+        path = os.path.join(self.session_dir, "run_summary.json")
+        with open(path, "w", encoding="utf-8") as summary_file:
+            json.dump(summary, summary_file, ensure_ascii=False, indent=2, sort_keys=True)
+            summary_file.write("\n")
 
     def update_mission_draft(self, content):
         with open(os.path.join(self.session_dir, "mission_draft.md"), "w", encoding="utf-8") as draft_file:
