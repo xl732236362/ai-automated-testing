@@ -33,11 +33,11 @@
 - Test: `tests/test_game_reverse_memory.py`
 - Test: `tests/test_game_reverse_run_loop.py`
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 Assert a run writes `feedback.jsonl`, `run_summary.json`, and profile `traces/<session_name>.jsonl`.
 
-- [ ] **Step 2: Verify tests fail**
+- [x] **Step 2: Verify tests fail**
 
 Run:
 
@@ -47,15 +47,15 @@ python -m pytest tests/test_game_reverse_journal.py tests/test_game_reverse_memo
 
 Expected: FAIL because the new artifact writers and trace helpers do not exist.
 
-- [ ] **Step 3: Implement artifact writers**
+- [x] **Step 3: Implement artifact writers**
 
 Add `Journal.write_feedback(record)`, `Journal.write_run_summary(summary)`, and `ProfileStore.append_trace(run_id, event)`.
 
-- [ ] **Step 4: Integrate run loop**
+- [x] **Step 4: Integrate run loop**
 
 Write one feedback record per successful step, append one profile trace event per successful step, and write a final summary with session id, stop reason, counts, and final goals.
 
-- [ ] **Step 5: Verify and commit**
+- [x] **Step 5: Verify and commit**
 
 Run:
 
@@ -80,11 +80,11 @@ git commit -m "feat: complete explorer artifact contract"
 - Test: `tests/test_game_reverse_actions.py`
 - Test: `tests/test_game_reverse_skill_library.py`
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 Assert `tap_target`, `swipe_target`, and `hold_drag_target` resolve bounded target rectangles into primitive actions. Assert skill replay can execute targeted steps.
 
-- [ ] **Step 2: Verify tests fail**
+- [x] **Step 2: Verify tests fail**
 
 Run:
 
@@ -94,11 +94,11 @@ python -m pytest tests/test_game_reverse_actions.py tests/test_game_reverse_skil
 
 Expected: FAIL because targeted action types are not supported.
 
-- [ ] **Step 3: Implement targeted action resolution**
+- [x] **Step 3: Implement targeted action resolution**
 
 Extend `validate_action()` to accept the targeted action types when allowed, resolve bounds to center points, and return primitive `tap`, `swipe`, or `hold_drag_release` actions with `target_ref` metadata preserved when present.
 
-- [ ] **Step 4: Verify and commit**
+- [x] **Step 4: Verify and commit**
 
 Run:
 
@@ -125,11 +125,11 @@ git commit -m "feat: add targeted action resolution"
 - Test: `tests/test_game_reverse_goal_planner.py`
 - Test: `tests/test_game_reverse_run_loop.py`
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 Assert role wrappers can call a decider-like backend for state analysis and action proposal, deterministic rule/skill mining delegates to existing modules, and `GoalPlanner.replan()` can accept a role output to update active/next goals.
 
-- [ ] **Step 2: Verify tests fail**
+- [x] **Step 2: Verify tests fail**
 
 Run:
 
@@ -139,11 +139,11 @@ python -m pytest tests/test_game_reverse_llm_roles.py tests/test_game_reverse_go
 
 Expected: FAIL because `game_reverse.llm_roles` and `GoalPlanner.replan()` do not exist.
 
-- [ ] **Step 3: Implement role wrappers and planner hook**
+- [x] **Step 3: Implement role wrappers and planner hook**
 
 Add simple role classes/functions around the current decider, `SkillLibrary.mine_candidates()`, and `GoalPlanner.replan()`. Integrate the hook after repeated no-change recovery so future LLM replanners have a stable call site without forcing LLM calls every step.
 
-- [ ] **Step 4: Verify and commit**
+- [x] **Step 4: Verify and commit**
 
 Run:
 
@@ -162,7 +162,7 @@ git commit -m "feat: add explorer llm role hooks"
 
 ### Task 4: Final Regression
 
-- [ ] **Step 1: Run full game_reverse suite**
+- [x] **Step 1: Run full game_reverse suite**
 
 Run:
 
@@ -172,6 +172,6 @@ python -c "import pathlib, subprocess, sys; files=[str(p) for p in pathlib.Path(
 
 Expected: PASS.
 
-- [ ] **Step 2: Summarize remaining non-goals**
+- [x] **Step 2: Summarize remaining non-goals**
 
 Confirm no remaining blueprint implementation gaps except non-goals such as guaranteed game completion or app injection.

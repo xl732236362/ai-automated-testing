@@ -426,6 +426,8 @@ class TestRunLoop(unittest.TestCase):
 
         self.assertEqual(actions[-1]["recovery_reason"], "repeated no-change feedback")
         self.assertIn("hold_drag_release", actions[-1]["recommended_actions"])
+        self.assertEqual(actions[-1]["replan_event"], "goal_replanned")
+        self.assertIn("hold_drag_release", actions[-1]["goal_candidates"])
 
     def test_persists_profile_memory_across_runs(self):
         with tempfile.TemporaryDirectory() as tmpdir:

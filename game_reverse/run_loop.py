@@ -452,7 +452,11 @@ def _record_feedback_and_artifacts(
     observation_record["next_strategy"] = strategy["next_strategy"]
     observation_record["recovery_reason"] = strategy["reason"]
     goal_event = goal_planner.update(observation_record, action_record, feedback)
+    replan_event = _maybe_replan_goals(goal_planner, strategy)
     _attach_goal_context(action_record, observation_record, goal_planner, goal_event)
+    if replan_event is not None:
+        action_record["replan_event"] = replan_event["event"]
+        observation_record["replan_event"] = replan_event["event"]
     journal.write_feedback(
         _feedback_record(
             observation_record,
@@ -473,6 +477,13 @@ def _record_feedback_and_artifacts(
         goal_planner,
         dict(goal_event, step=observation_record["step"]),
     )
+    if replan_event is not None:
+        _write_goal_artifacts(
+            journal,
+            profile_store,
+            goal_planner,
+            dict(replan_event, step=observation_record["step"]),
+        )
     _update_profile(
         profile_store,
         session_name,
@@ -484,6 +495,17 @@ def _record_feedback_and_artifacts(
         feedback,
     )
     return feedback
+
+
+def _maybe_replan_goals(goal_planner, strategy):
+    if strategy.get("next_strategy") not in ("switch_gesture", "switch_target"):
+        return None
+    return goal_planner.replan(
+        {
+            "next_candidates": strategy.get("recommended_actions", []),
+            "reason": strategy.get("reason", ""),
+        }
+    )
 
 
 def _attach_goal_context(action_record, observation_record, goal_planner, goal_event):

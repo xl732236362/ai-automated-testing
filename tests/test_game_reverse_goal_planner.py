@@ -57,6 +57,23 @@ class TestGoalPlanner(unittest.TestCase):
 
         self.assertEqual(planner.to_goals()["active_subgoal"], "identify main navigation")
 
+    def test_replan_updates_active_subgoal_and_candidates(self):
+        planner = GoalPlanner(Mission(type="free_explore", goal="Explore app"))
+
+        event = planner.replan(
+            {
+                "active_subgoal": "try alternate navigation path",
+                "next_candidates": ["swipe", "hold_drag_release"],
+                "reason": "repeated no-change feedback",
+            }
+        )
+        goals = planner.to_goals()
+
+        self.assertEqual(event["event"], "goal_replanned")
+        self.assertEqual(goals["active_subgoal"], "try alternate navigation path")
+        self.assertEqual(goals["next_candidates"], ["swipe", "hold_drag_release"])
+        self.assertEqual(planner.last_event["reason"], "repeated no-change feedback")
+
 
 if __name__ == "__main__":
     unittest.main()

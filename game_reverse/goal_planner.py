@@ -62,6 +62,32 @@ class GoalPlanner:
         self.last_event = event
         return event
 
+    def replan(self, proposal):
+        proposal = proposal or {}
+        active_subgoal = proposal.get("active_subgoal")
+        if active_subgoal:
+            self.active_subgoal = active_subgoal
+
+        if "goal_ladder" in proposal and isinstance(proposal.get("goal_ladder"), list):
+            self.goal_ladder = [item for item in proposal["goal_ladder"] if item]
+        self._merge_completed(proposal.get("completed_subgoals", []))
+        self._merge_blocked(proposal.get("blocked_subgoals", []))
+
+        next_candidates = proposal.get("next_candidates")
+        if isinstance(next_candidates, list):
+            self.next_candidates = [item for item in next_candidates if item]
+        else:
+            self.next_candidates = self._next_candidates()
+
+        event = {
+            "event": "goal_replanned",
+            "active_subgoal": self.active_subgoal,
+            "reason": proposal.get("reason", ""),
+            "next_candidates": list(self.next_candidates),
+        }
+        self.last_event = event
+        return event
+
     def to_goals(self):
         return {
             "version": GOAL_SCHEMA_VERSION,
@@ -111,3 +137,29 @@ class GoalPlanner:
             if len(candidates) >= 3:
                 break
         return candidates
+
+    def _merge_completed(self, completed_subgoals):
+        for subgoal in completed_subgoals or []:
+            if subgoal and subgoal not in self.completed_subgoals:
+                self.completed_subgoals.append(subgoal)
+
+    def _merge_blocked(self, blocked_subgoals):
+        existing = {
+            (item.get("subgoal"), item.get("reason", ""))
+            for item in self.blocked_subgoals
+            if isinstance(item, dict)
+        }
+        for item in blocked_subgoals or []:
+            if isinstance(item, str):
+                blocked = {"subgoal": item, "reason": ""}
+            elif isinstance(item, dict):
+                blocked = {
+                    "subgoal": item.get("subgoal", ""),
+                    "reason": item.get("reason", ""),
+                }
+            else:
+                continue
+            key = (blocked.get("subgoal"), blocked.get("reason", ""))
+            if blocked.get("subgoal") and key not in existing:
+                self.blocked_subgoals.append(blocked)
+                existing.add(key)
