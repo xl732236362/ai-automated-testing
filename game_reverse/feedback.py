@@ -40,6 +40,9 @@ def classify_feedback(before=None, after=None, before_screen_path=None, after_sc
         "ui_changed": ui_changed,
         "safety_label": "",
     }
+    verified_progress = _verified_progress(after)
+    if verified_progress:
+        base.update(_verified_progress_fields(verified_progress))
 
     if _has_any(after_text, SENSITIVE_KEYWORDS):
         return _feedback(
@@ -55,6 +58,12 @@ def classify_feedback(before=None, after=None, before_screen_path=None, after_sc
         return _feedback("level_failed", _evidence(after_text, "level failed"), base)
     if _has_any(after_text, POPUP_KEYWORDS):
         return _feedback("popup_opened", _evidence(after_text, "popup opened"), base)
+    if verified_progress:
+        if verified_progress.get("changed") and verified_progress.get("progress_delta", 0) > 0:
+            return _feedback("counter_changed", _progress_evidence(verified_progress), base)
+        if visual_diff_score > 0 or before_text != after_text:
+            return _feedback("visual_changed", "verified progress unchanged", base)
+        return _feedback("no_visible_change", "verified progress unchanged", base, confidence="high")
     if _has_counter_change(after_text) and before_text != after_text and not _unchanged_visual(has_visual_evidence, visual_diff_score):
         return _feedback("counter_changed", _evidence(after_text, "counter"), base)
     if _has_tray_change(after_text) and before_text != after_text and not _unchanged_visual(has_visual_evidence, visual_diff_score):
@@ -118,6 +127,31 @@ def _observation_text(observation):
     parts.extend(_text_items(observation, "ocr"))
     parts.extend(_text_items(observation, "ui_nodes"))
     return " ".join(parts).lower()
+
+
+def _verified_progress(observation):
+    if not observation:
+        return None
+    progress = observation.get("verified_progress")
+    if isinstance(progress, dict):
+        return progress
+    return None
+
+
+def _verified_progress_fields(progress):
+    return {
+        "before_counts": list(progress.get("before_counts") or []),
+        "after_counts": list(progress.get("after_counts") or []),
+        "progress_delta": int(progress.get("progress_delta") or 0),
+        "progress_changed": bool(progress.get("changed")),
+    }
+
+
+def _progress_evidence(progress):
+    return "target counts changed from %s to %s" % (
+        list(progress.get("before_counts") or []),
+        list(progress.get("after_counts") or []),
+    )
 
 
 def _has_counter_change(text):

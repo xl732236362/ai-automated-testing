@@ -8,7 +8,14 @@ from game_reverse.actions import validate_action
 
 SKILL_SCHEMA_VERSION = 1
 DEFAULT_CONFIDENCE_THRESHOLD = 0.5
-SUCCESS_SIGNALS = {"level_started", "popup_closed", "level_completed", "state_changed", "entered_new_state"}
+SUCCESS_SIGNALS = {
+    "level_started",
+    "popup_closed",
+    "level_completed",
+    "state_changed",
+    "entered_new_state",
+    "counter_changed",
+}
 
 
 class SkillLibrary:

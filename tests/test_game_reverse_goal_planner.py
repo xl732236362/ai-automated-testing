@@ -74,6 +74,21 @@ class TestGoalPlanner(unittest.TestCase):
         self.assertEqual(goals["next_candidates"], ["swipe", "hold_drag_release"])
         self.assertEqual(planner.last_event["reason"], "repeated no-change feedback")
 
+    def test_counter_progress_advances_from_startup_to_result_detection(self):
+        planner = GoalPlanner(Mission(type="free_explore", goal="Clear the level"))
+
+        event = planner.update(
+            observation={"state": "level_5_gameplay"},
+            action_record={"action": {"type": "hold_drag_release"}},
+            feedback={"result": "counter_changed", "progress_delta": 1},
+        )
+        goals = planner.to_goals()
+
+        self.assertEqual(event["event"], "subgoal_completed")
+        self.assertIn("stabilize launch state", goals["completed_subgoals"])
+        self.assertEqual(goals["active_subgoal"], "detect result state")
+        self.assertIn("continue safe progression", goals["next_candidates"])
+
 
 if __name__ == "__main__":
     unittest.main()

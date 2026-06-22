@@ -3,6 +3,7 @@
 
 import argparse
 import hashlib
+import inspect
 import os
 import time
 
@@ -15,6 +16,9 @@ from game_reverse.goal_planner import GoalPlanner
 from game_reverse.journal import Journal
 from game_reverse.llm_decider import ClaudeDecider
 from game_reverse.memory import ProfileStore
+from game_reverse.profile_learning import merge_profile_payloads, summarize_profile_memory
+from game_reverse.profile_view import load_profile_summary
+from game_reverse.progress import compare_progress, normalize_progress
 from game_reverse.report_writer import update_mission_draft, write_final_report
 from game_reverse.skill_library import SkillLibrary
 from game_reverse.state_graph import StateGraph
@@ -28,6 +32,7 @@ def run_loop(config, executor=None, decider=None, session_name=None, context=Non
     profile_store = _create_profile_store(config)
     skill_library = _create_skill_library(profile_store)
     goal_planner = _create_goal_planner(config, profile_store)
+    memory_summary = _create_memory_summary(config, profile_store)
     _write_goal_artifacts(journal, profile_store, goal_planner, None)
     _emit_context_event(
         context,
@@ -76,6 +81,7 @@ def run_loop(config, executor=None, decider=None, session_name=None, context=Non
                 "ui_nodes": [],
                 "visual_regions": [],
                 "proposed_regions": [],
+                "progress": {},
             }
             skill_result = _try_skill(
                 skill_library,
@@ -160,11 +166,13 @@ def run_loop(config, executor=None, decider=None, session_name=None, context=Non
                     previous_observation = observation_record
                     failure_count = 0
                     continue
-            decision = decider.decide(
+            decision = _decide(
+                decider,
                 screen_path,
                 config.mission,
                 recent_actions[-config.recent_steps :],
                 mission_draft,
+                memory_summary=memory_summary,
             )
             action = validate_action(decision["action"], config.allowed_actions, screen_size)
             if action["type"] == "screenshot":
@@ -201,7 +209,12 @@ def run_loop(config, executor=None, decider=None, session_name=None, context=Non
                 "ui_nodes": decision.get("ui_nodes", []),
                 "visual_regions": decision.get("visual_regions", []),
                 "proposed_regions": decision.get("proposed_regions", []),
+                "progress": normalize_progress(decision.get("progress")),
             }
+            observation_record["verified_progress"] = compare_progress(
+                (previous_observation or {}).get("progress"),
+                observation_record.get("progress"),
+            )
             state_update = _update_state_and_affordances(
                 state_graph,
                 affordance_memory,
@@ -290,8 +303,14 @@ def run_loop(config, executor=None, decider=None, session_name=None, context=Non
     journal.write_state_map(state_graph.to_state_map())
     journal.write_affordances(affordance_memory.to_affordances())
     if profile_store is not None:
-        profile_store.update_json("state_map.json", state_graph.to_state_map())
-        profile_store.update_json("affordances.json", affordance_memory.to_affordances())
+        _merge_profile_artifacts(
+            profile_store,
+            session_name,
+            state_graph,
+            affordance_memory,
+            skill_library,
+            completed_steps,
+        )
     journal.write_run_summary(
         _run_summary(
             session_name,
@@ -351,6 +370,29 @@ def _create_goal_planner(config, profile_store):
     if profile_store is not None:
         existing_goals = profile_store.load_json("goals.json", {})
     return GoalPlanner(config.mission, existing=existing_goals)
+
+
+def _create_memory_summary(config, profile_store):
+    if profile_store is None:
+        return ""
+    profile = load_profile_summary(config.profile_root, config.package_name)
+    return summarize_profile_memory(profile)
+
+
+def _decide(decider, screen_path, mission, recent_actions, mission_draft, memory_summary):
+    try:
+        parameters = inspect.signature(decider.decide).parameters
+    except (TypeError, ValueError):
+        parameters = {}
+    if "memory_summary" in parameters:
+        return decider.decide(
+            screen_path,
+            mission,
+            recent_actions,
+            mission_draft,
+            memory_summary=memory_summary,
+        )
+    return decider.decide(screen_path, mission, recent_actions, mission_draft)
 
 
 def _update_state_and_affordances(
@@ -442,6 +484,10 @@ def _record_feedback_and_artifacts(
     action_record["ocr_changed"] = feedback["ocr_changed"]
     action_record["ui_changed"] = feedback["ui_changed"]
     action_record["safety_label"] = feedback["safety_label"]
+    action_record["before_counts"] = feedback.get("before_counts", [])
+    action_record["after_counts"] = feedback.get("after_counts", [])
+    action_record["progress_delta"] = feedback.get("progress_delta", 0)
+    action_record["progress_changed"] = feedback.get("progress_changed", False)
     action_record["next_strategy"] = strategy["next_strategy"]
     action_record["recommended_actions"] = strategy["recommended_actions"]
     action_record["recovery_reason"] = strategy["reason"]
@@ -449,6 +495,8 @@ def _record_feedback_and_artifacts(
     observation_record["feedback_confidence"] = feedback["confidence"]
     observation_record["visual_diff_score"] = feedback["visual_diff_score"]
     observation_record["safety_label"] = feedback["safety_label"]
+    observation_record["progress_delta"] = feedback.get("progress_delta", 0)
+    observation_record["progress_changed"] = feedback.get("progress_changed", False)
     observation_record["next_strategy"] = strategy["next_strategy"]
     observation_record["recovery_reason"] = strategy["reason"]
     goal_event = goal_planner.update(observation_record, action_record, feedback)
@@ -539,8 +587,6 @@ def _update_profile(
 ):
     if profile_store is None:
         return
-    profile_store.update_json("state_map.json", state_graph.to_state_map())
-    profile_store.update_json("affordances.json", affordance_memory.to_affordances())
     profile_store.update_json(
         "safety_rules.json",
         _profile_safety_rules(profile_store, observation_record, feedback),
@@ -552,6 +598,32 @@ def _update_profile(
         session_name,
         _profile_step_event(session_name, observation_record, action_record, transition, feedback),
     )
+
+
+def _merge_profile_artifacts(
+    profile_store,
+    session_name,
+    state_graph,
+    affordance_memory,
+    skill_library,
+    completed_steps,
+):
+    existing_state_map = profile_store.load_json("state_map.json", {"version": 1, "states": {}, "transitions": []})
+    existing_affordances = profile_store.load_json("affordances.json", {"version": 1, "states": {}})
+    existing_skills = profile_store.load_json("skills.json", {"version": 1, "skills": []})
+    mined_skills = skill_library.mine_candidates(completed_steps)
+    merged = merge_profile_payloads(
+        existing_state_map=existing_state_map,
+        current_state_map=state_graph.to_state_map(),
+        existing_affordances=existing_affordances,
+        current_affordances=affordance_memory.to_affordances(),
+        existing_skills=existing_skills,
+        mined_skills=mined_skills,
+        session_name=session_name,
+    )
+    profile_store.update_json("state_map.json", merged["state_map"])
+    profile_store.update_json("affordances.json", merged["affordances"])
+    profile_store.update_json("skills.json", merged["skills"])
 
 
 def _profile_safety_rules(profile_store, observation_record, feedback):
@@ -590,6 +662,10 @@ def _feedback_record(observation_record, action_record, transition, feedback, st
         "ocr_changed": feedback.get("ocr_changed"),
         "ui_changed": feedback.get("ui_changed"),
         "safety_label": feedback.get("safety_label"),
+        "before_counts": feedback.get("before_counts", []),
+        "after_counts": feedback.get("after_counts", []),
+        "progress_delta": feedback.get("progress_delta", 0),
+        "progress_changed": feedback.get("progress_changed", False),
         "next_strategy": strategy.get("next_strategy"),
         "recommended_actions": strategy.get("recommended_actions"),
         "recovery_reason": strategy.get("reason"),

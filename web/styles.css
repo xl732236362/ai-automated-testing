@@ -29,6 +29,7 @@ body {
 
 button,
 input,
+select,
 textarea {
   font: inherit;
 }
@@ -332,6 +333,7 @@ label {
 }
 
 input,
+select,
 textarea {
   width: 100%;
   border: 1px solid var(--line);
@@ -340,15 +342,25 @@ textarea {
   color: var(--text);
 }
 
-input {
+input,
+select {
   min-height: 34px;
   padding: 7px 9px;
 }
 
 input:focus,
+select:focus,
 textarea:focus {
   border-color: var(--accent);
   outline: 2px solid rgba(35, 100, 170, 0.14);
+}
+
+.device-select {
+  margin-bottom: 8px;
+}
+
+.device-select[hidden] {
+  display: none;
 }
 
 .mission-card {

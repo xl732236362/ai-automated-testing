@@ -96,7 +96,7 @@ class ClaudeDecider:
     def __init__(self, model):
         self.model = model
 
-    def decide(self, screen_path, mission, recent_actions, mission_draft):
+    def decide(self, screen_path, mission, recent_actions, mission_draft, memory_summary=""):
         client = _create_anthropic_client()
         with open(screen_path, "rb") as screen_file:
             image_data = base64.standard_b64encode(screen_file.read()).decode("utf-8")
@@ -118,7 +118,12 @@ class ClaudeDecider:
                         },
                         {
                             "type": "text",
-                            "text": _build_decision_prompt(mission, recent_actions, mission_draft),
+                            "text": _build_decision_prompt(
+                                mission,
+                                recent_actions,
+                                mission_draft,
+                                memory_summary=memory_summary,
+                            ),
                         },
                     ],
                 }
@@ -168,7 +173,7 @@ def _unquote_env_value(value):
     return value
 
 
-def _build_decision_prompt(mission, recent_actions, mission_draft):
+def _build_decision_prompt(mission, recent_actions, mission_draft, memory_summary=""):
     return (
         "You are exploring an Android App/Game for authorized black-box testing, "
         "feature verification, or design analysis. Only recommend these actions: "
@@ -179,6 +184,7 @@ def _build_decision_prompt(mission, recent_actions, mission_draft):
         "Mission goal: %s\n"
         "Mission targets: %s\n"
         "Mission success criteria: %s\n\n"
+        "Learned memory:\n%s\n\n"
         "Recent actions and feedback:\n%s\n\n"
         "Current mission draft:\n%s\n\n"
         "Return only one JSON object. Do not include Markdown fences or explanations. "
@@ -190,13 +196,15 @@ def _build_decision_prompt(mission, recent_actions, mission_draft):
         '  "reason": "why this safe action is useful",\n'
         '  "new_findings": [],\n'
         '  "screenshot_tags": [],\n'
-        '  "risks": []\n'
+        '  "risks": [],\n'
+        '  "progress": {"level_label": "", "target_counts": [], "terminal_state": ""}\n'
         "}"
     ) % (
         mission.type,
         mission.goal,
         json.dumps(mission.targets, ensure_ascii=False),
         json.dumps(mission.success_criteria, ensure_ascii=False),
+        compact_text(memory_summary, 1200) or "(none)",
         json.dumps(compact_recent_actions(recent_actions), ensure_ascii=False),
         compact_text(mission_draft, MAX_MISSION_DRAFT_CHARS),
     )
@@ -214,6 +222,9 @@ def compact_recent_actions(recent_actions, limit=MAX_PROMPT_RECENT_ACTIONS):
                 "reason": compact_text(action.get("reason", ""), 160),
                 "feedback_result": action.get("feedback_result"),
                 "feedback_evidence": compact_text(action.get("feedback_evidence", ""), 160),
+                "before_counts": action.get("before_counts", []),
+                "after_counts": action.get("after_counts", []),
+                "progress_delta": action.get("progress_delta", 0),
                 "next_strategy": action.get("next_strategy"),
                 "recommended_actions": action.get("recommended_actions", []),
                 "recovery_reason": compact_text(action.get("recovery_reason", ""), 160),
@@ -282,6 +293,19 @@ def _decision_schema():
             },
             "screenshot_tags": {"type": "array", "items": {"type": "string"}},
             "risks": {"type": "array", "items": {"type": "string"}},
+            "progress": {
+                "type": "object",
+                "properties": {
+                    "level_label": {"type": "string"},
+                    "target_counts": {
+                        "type": "array",
+                        "items": {"type": "integer"},
+                    },
+                    "terminal_state": {"type": "string"},
+                },
+                "required": ["level_label", "target_counts", "terminal_state"],
+                "additionalProperties": False,
+            },
         },
         "required": REQUIRED_DECISION_FIELDS,
         "additionalProperties": False,

@@ -261,6 +261,7 @@ function wireTargetConfigControls() {
   const detectButton = document.getElementById("detect-devices-button");
   const foregroundButton = document.getElementById("use-foreground-app-button");
   const validateButton = document.getElementById("validate-target-button");
+  const deviceSelect = document.getElementById("device-select");
 
   if (detectButton) {
     detectButton.addEventListener("click", detectDevices);
@@ -271,40 +272,110 @@ function wireTargetConfigControls() {
   if (validateButton) {
     validateButton.addEventListener("click", validateTargetConfig);
   }
+  if (deviceSelect) {
+    deviceSelect.addEventListener("change", () => {
+      const selected = selectedDeviceFromSelect();
+      if (selected) {
+        selectDevice(selected, {loadForeground: true});
+      }
+    });
+  }
   updateTargetConfigControls();
 }
 
-function detectDevices() {
-  setTargetConfigStatus("正在检测设备...", "info");
+function autoDetectTargetConfig() {
+  if (!backendOnline) {
+    return Promise.resolve([]);
+  }
+  return detectDevices({automatic: true});
+}
+
+function detectDevices(options = {}) {
+  const automatic = Boolean(options.automatic);
+  setTargetConfigStatus(automatic ? "正在自动检测设备..." : "正在检测设备...", "info");
   return fetch(`${API_BASE}/api/devices`)
     .then((response) => readJsonOrThrow(response, "检测设备失败"))
     .then((data) => {
-      const devices = data.devices || [];
+      const sortedDevices = sortDevicesById(data.devices || []);
+      renderDeviceSelect(sortedDevices);
+      const devices = sortedDevices;
       if (devices.length === 0) {
-        setTargetConfigStatus("未检测到在线设备", "warning");
+        setTargetConfigStatus("未检测到在线设备，请手动填写设备地址", "warning");
         return devices;
       }
 
-      const firstDevice = devices[0];
-      if (devices.length === 1) {
-        setInputValue("device-uri-input", firstDevice.uri || `Android:///${firstDevice.id}`);
-        setTargetConfigStatus(`已连接 ${firstDevice.id}`, "ok");
-        return devices;
+      if (devices.length > 1) {
+        setTargetConfigStatus(`检测到 ${devices.length} 个设备，默认选择 ${devices[0].id}。`, "info");
       }
-
-      setTargetConfigStatus(
-        `检测到 ${devices.length} 个设备，请手动填写设备地址。`,
-        "warning"
-      );
-      return devices;
+      return selectDevice(sortedDevices[0], {loadForeground: true}).then(() => devices);
     })
     .catch((error) => {
       setTargetConfigStatus(error.message, "error");
+      renderDeviceSelect([]);
       return [];
     });
 }
 
-function useForegroundApp() {
+function sortDevicesById(devices) {
+  return Array.from(devices || [])
+    .map((device) => ({...device, id: device.id || ""}))
+    .sort((device, otherDevice) => device.id.localeCompare(otherDevice.id));
+}
+
+function renderDeviceSelect(devices) {
+  const deviceSelect = document.getElementById("device-select");
+  if (!deviceSelect) {
+    return;
+  }
+
+  deviceSelect.replaceChildren(
+    ...devices.map((device) => {
+      const option = document.createElement("option");
+      option.value = device.id || "";
+      option.textContent = device.label || device.id || device.uri || "unknown";
+      option.dataset.uri = device.uri || "";
+      option.dataset.label = device.label || "";
+      return option;
+    })
+  );
+  deviceSelect.disabled = devices.length <= 1;
+  deviceSelect.hidden = devices.length === 0;
+  if (devices.length > 0) {
+    deviceSelect.value = devices[0].id || "";
+  }
+}
+
+function selectedDeviceFromSelect() {
+  const deviceSelect = document.getElementById("device-select");
+  if (!deviceSelect || !deviceSelect.value) {
+    return null;
+  }
+  const option = deviceSelect.selectedOptions[0];
+  return {
+    id: deviceSelect.value,
+    uri: option ? option.dataset.uri : "",
+    label: option ? option.dataset.label : "",
+  };
+}
+
+function selectDevice(device, options = {}) {
+  if (!device || !device.id) {
+    return Promise.resolve(null);
+  }
+  const deviceSelect = document.getElementById("device-select");
+  if (deviceSelect) {
+    deviceSelect.value = device.id;
+  }
+  setInputValue("device-uri-input", device.uri || `Android:///${device.id}`);
+  setTargetConfigStatus(`已选择设备 ${device.id}，正在读取前台应用...`, "info");
+  if (options.loadForeground) {
+    return useForegroundApp();
+  }
+  setTargetConfigStatus(`已选择设备 ${device.id}`, "ok");
+  return Promise.resolve(device);
+}
+
+function useForegroundApp(options = {}) {
   const deviceId = readDeviceIdFromInput();
   if (!deviceId) {
     setTargetConfigStatus("设备地址格式不正确", "error");
@@ -315,7 +386,7 @@ function useForegroundApp() {
   return fetch(`${API_BASE}/api/devices/${encodeURIComponent(deviceId)}/foreground`)
     .then((response) => readJsonOrThrow(response, "读取前台应用失败"))
     .then((data) => {
-      handleForegroundAppDetection(data);
+      handleForegroundAppDetection(data, options);
       return data;
     })
     .catch((error) => {
@@ -324,9 +395,10 @@ function useForegroundApp() {
     });
 }
 
-function handleForegroundAppDetection(data) {
+function handleForegroundAppDetection(data, options = {}) {
   const detectedPackage = data.package_name || "";
   const currentPackage = readInputValue("package-name-input", "");
+  const shouldOverwrite = options.overwritePackage !== false;
   const foregroundContext = formatForegroundAppContext(data);
 
   if (!detectedPackage) {
@@ -339,7 +411,7 @@ function handleForegroundAppDetection(data) {
     return;
   }
 
-  if (currentPackage && currentPackage !== detectedPackage) {
+  if (currentPackage && currentPackage !== detectedPackage && !shouldOverwrite) {
     setTargetConfigStatus(
       `当前前台应用与包名不一致，请确认后再开始。${foregroundContext}`,
       "warning"
@@ -347,7 +419,7 @@ function handleForegroundAppDetection(data) {
     return;
   }
 
-  if (!currentPackage) {
+  if (!currentPackage || currentPackage !== detectedPackage) {
     setInputValue("package-name-input", detectedPackage);
   }
   setTargetConfigStatus(`当前前台应用 ${foregroundContext}`, "ok");
@@ -429,7 +501,7 @@ function setTargetConfigStatus(message, tone) {
 }
 
 function updateTargetConfigControls() {
-  ["detect-devices-button", "use-foreground-app-button", "validate-target-button"].forEach((id) => {
+  ["detect-devices-button", "use-foreground-app-button", "validate-target-button", "device-select"].forEach((id) => {
     const button = document.getElementById(id);
     if (button) {
       button.disabled = !backendOnline;
@@ -622,6 +694,7 @@ function updateBackendStatus() {
   if (backendOnline) {
     loadSessions();
     loadProfileSummary();
+    autoDetectTargetConfig();
   }
 }
 

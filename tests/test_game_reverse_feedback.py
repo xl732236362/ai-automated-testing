@@ -18,6 +18,40 @@ class TestGameReverseFeedback(unittest.TestCase):
         self.assertEqual(feedback["result"], "counter_changed")
         self.assertIn("counter", feedback["evidence"])
 
+    def test_verified_progress_overrides_counter_keywords_when_counts_do_not_change(self):
+        feedback = classify_feedback(
+            before={"screen_summary": "target counters are visible"},
+            after={
+                "screen_summary": "target counters are visible and the crosshair moved",
+                "verified_progress": {
+                    "before_counts": [3, 3, 3, 6, 3, 3],
+                    "after_counts": [3, 3, 3, 6, 3, 3],
+                    "progress_delta": 0,
+                    "changed": False,
+                },
+            },
+        )
+
+        self.assertEqual(feedback["result"], "visual_changed")
+        self.assertEqual(feedback["progress_delta"], 0)
+
+    def test_verified_progress_classifies_counter_change_only_when_counts_decrease(self):
+        feedback = classify_feedback(
+            before={"screen_summary": "target counters are visible"},
+            after={
+                "screen_summary": "target counters are visible",
+                "verified_progress": {
+                    "before_counts": [3, 3, 3, 6, 3, 3],
+                    "after_counts": [3, 3, 2, 6, 3, 3],
+                    "progress_delta": 1,
+                    "changed": True,
+                },
+            },
+        )
+
+        self.assertEqual(feedback["result"], "counter_changed")
+        self.assertEqual(feedback["progress_delta"], 1)
+
     def test_classifies_tray_change_without_counter_text(self):
         feedback = classify_feedback(
             before={"screen_summary": "bottom tray empty"},

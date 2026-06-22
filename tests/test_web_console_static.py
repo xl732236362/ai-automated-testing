@@ -34,6 +34,7 @@ class TestWebConsoleStatic(unittest.TestCase):
         self.assertIn('id="event-log"', html)
         self.assertIn('id="session-list"', html)
         self.assertIn('id="device-uri-input"', html)
+        self.assertIn('id="device-select"', html)
         self.assertIn('id="package-name-input"', html)
         self.assertIn('id="model-input"', html)
         self.assertIn('id="max-steps-input"', html)
@@ -104,6 +105,12 @@ class TestWebConsoleStatic(unittest.TestCase):
         self.assertIn("/api/config", script)
         self.assertIn("mergeBackendConfig", script)
         self.assertIn("detectDevices", script)
+        self.assertIn("autoDetectTargetConfig", script)
+        self.assertIn("renderDeviceSelect", script)
+        self.assertIn("selectDevice", script)
+        self.assertIn("sortDevicesById", script)
+        self.assertIn("device.id.localeCompare", script)
+        self.assertIn("deviceSelect.addEventListener", script)
         self.assertIn("useForegroundApp", script)
         self.assertIn("validateTargetConfig", script)
         self.assertIn("loadProfileSummary", script)
@@ -118,6 +125,19 @@ class TestWebConsoleStatic(unittest.TestCase):
         self.assertNotIn("child_process", script)
         self.assertNotIn("codex exec", script)
         self.assertNotIn("claude -p", script)
+
+    def test_app_auto_fills_first_sorted_device_and_foreground_package(self):
+        html = (WEB_DIR / "index.html").read_text(encoding="utf-8")
+        script = (WEB_DIR / "app.js").read_text(encoding="utf-8")
+
+        self.assertIn('class="device-select"', html)
+        self.assertIn('aria-label="选择设备"', html)
+        self.assertIn("autoDetectTargetConfig();", script)
+        self.assertIn("const sortedDevices = sortDevicesById(data.devices || []);", script)
+        self.assertIn("renderDeviceSelect(sortedDevices);", script)
+        self.assertIn("selectDevice(sortedDevices[0], {loadForeground: true})", script)
+        self.assertIn("setInputValue(\"device-uri-input\", device.uri || `Android:///${device.id}`);", script)
+        self.assertIn("return useForegroundApp();", script)
 
     def test_foreground_app_detection_requires_conservative_package_handling(self):
         script = (WEB_DIR / "app.js").read_text(encoding="utf-8")

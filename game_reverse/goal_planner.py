@@ -51,6 +51,12 @@ class GoalPlanner:
             self.next_candidates = self._next_candidates()
             self.last_event = event
             return event
+        if result == "counter_changed" and (feedback or {}).get("progress_delta", 0) > 0:
+            event = self._complete_active_subgoal(result)
+            self.active_subgoal = "detect result state"
+            self.next_candidates = ["continue safe progression", "verify remaining target counts"]
+            self.last_event = event
+            return event
 
         event = {
             "event": "subgoal_progress",

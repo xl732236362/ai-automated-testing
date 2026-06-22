@@ -84,6 +84,77 @@ class StaticScreenshotCounterDecider:
         }
 
 
+class StaticProgressChangingSummaryDecider:
+    def __init__(self):
+        self.calls = 0
+
+    def decide(self, screen_path, mission, recent_actions, mission_draft):
+        self.calls += 1
+        summary = "target counters visible" if self.calls == 1 else "target counters visible after aim moved"
+        return {
+            "screen_summary": summary,
+            "state": "level_5_gameplay",
+            "action": {"type": "wait", "seconds": 0},
+            "reason": "verify progress",
+            "new_findings": [],
+            "screenshot_tags": [],
+            "risks": [],
+            "progress": {
+                "level_label": "Level 5",
+                "target_counts": [3, 3, 3, 6, 3, 3],
+                "terminal_state": "",
+            },
+        }
+
+
+class DecreasingProgressDecider:
+    def __init__(self):
+        self.calls = 0
+
+    def decide(self, screen_path, mission, recent_actions, mission_draft):
+        self.calls += 1
+        counts = [3, 3, 3, 6, 3, 3] if self.calls == 1 else [3, 3, 2, 6, 3, 3]
+        return {
+            "screen_summary": "target counters visible",
+            "state": "level_5_gameplay",
+            "action": {"type": "wait", "seconds": 0},
+            "reason": "verify progress",
+            "new_findings": [],
+            "screenshot_tags": [],
+            "risks": [],
+            "progress": {
+                "level_label": "Level 5",
+                "target_counts": counts,
+                "terminal_state": "",
+            },
+        }
+
+
+class MemoryRecordingDecider:
+    def __init__(self):
+        self.memory_summaries = []
+        self.calls = 0
+
+    def decide(self, screen_path, mission, recent_actions, mission_draft, memory_summary=""):
+        self.calls += 1
+        self.memory_summaries.append(memory_summary)
+        counts = [3, 3, 3, 6, 3, 3] if self.calls == 1 else [3, 3, 2, 6, 3, 3]
+        return {
+            "screen_summary": "target counters visible",
+            "state": "level_5_gameplay",
+            "action": {"type": "wait", "seconds": 0},
+            "reason": "use memory",
+            "new_findings": [],
+            "screenshot_tags": [],
+            "risks": [],
+            "progress": {
+                "level_label": "Level 5",
+                "target_counts": counts,
+                "terminal_state": "",
+            },
+        }
+
+
 class FakeDecider:
     def __init__(self):
         self.calls = 0
@@ -301,6 +372,60 @@ class TestRunLoop(unittest.TestCase):
         self.assertIn("post_step_0002.png", observations[-1]["post_action_screen"])
         self.assertTrue(post_screen_exists)
 
+    def test_structured_progress_prevents_counter_false_positive(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config = GameReverseConfig(
+                device_uri="Android:///",
+                package_name="com.example.game",
+                max_steps=2,
+                output_root=tmpdir,
+                profile_enabled=False,
+                allowed_actions=["screenshot", "wait"],
+                mission=Mission(type="free_explore", goal="Explore", targets=["play"]),
+            )
+
+            session_dir = run_loop(
+                config,
+                executor=ByteChangingScreenshotExecutor(),
+                decider=StaticProgressChangingSummaryDecider(),
+                session_name="verified-progress-stable-session",
+            )
+
+            with open(os.path.join(session_dir, "actions.jsonl"), encoding="utf-8") as action_file:
+                actions = [json.loads(line) for line in action_file if line.strip()]
+
+        self.assertEqual(actions[-1]["feedback_result"], "visual_changed")
+        self.assertEqual(actions[-1]["progress_delta"], 0)
+        self.assertEqual(actions[-1]["before_counts"], [3, 3, 3, 6, 3, 3])
+        self.assertEqual(actions[-1]["after_counts"], [3, 3, 3, 6, 3, 3])
+
+    def test_structured_progress_confirms_counter_decrease(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config = GameReverseConfig(
+                device_uri="Android:///",
+                package_name="com.example.game",
+                max_steps=2,
+                output_root=tmpdir,
+                profile_enabled=False,
+                allowed_actions=["screenshot", "wait"],
+                mission=Mission(type="free_explore", goal="Explore", targets=["play"]),
+            )
+
+            session_dir = run_loop(
+                config,
+                executor=ByteChangingScreenshotExecutor(),
+                decider=DecreasingProgressDecider(),
+                session_name="verified-progress-decrease-session",
+            )
+
+            with open(os.path.join(session_dir, "actions.jsonl"), encoding="utf-8") as action_file:
+                actions = [json.loads(line) for line in action_file if line.strip()]
+
+        self.assertEqual(actions[-1]["feedback_result"], "counter_changed")
+        self.assertEqual(actions[-1]["progress_delta"], 1)
+        self.assertEqual(actions[-1]["before_counts"], [3, 3, 3, 6, 3, 3])
+        self.assertEqual(actions[-1]["after_counts"], [3, 3, 2, 6, 3, 3])
+
     def test_writes_state_graph_artifacts_for_run(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             config = GameReverseConfig(
@@ -478,6 +603,72 @@ class TestRunLoop(unittest.TestCase):
         self.assertGreaterEqual(len(memory_events), 2)
         self.assertEqual({event["session_name"] for event in memory_events}, {"profile-run-one", "profile-run-two"})
         self.assertEqual(trace_events[0]["session_name"], "profile-run-two")
+
+    def test_injects_profile_memory_and_mines_successful_skills(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_root = os.path.join(tmpdir, "sessions")
+            profile_root = os.path.join(tmpdir, "profiles")
+            profile_dir = os.path.join(profile_root, "com.example.game")
+            os.makedirs(profile_dir)
+            with open(os.path.join(profile_dir, "skills.json"), "w", encoding="utf-8") as skills_file:
+                json.dump(
+                    {
+                        "version": 1,
+                        "skills": [
+                            {
+                                "name": "known_aim_skill",
+                                "trigger": {"state_labels": ["known_state"]},
+                                "confidence": 0.8,
+                                "success_signal": "counter_changed",
+                                "steps": [{"type": "wait", "seconds": 0}],
+                            }
+                        ],
+                    },
+                    skills_file,
+                )
+            with open(os.path.join(profile_dir, "memory.jsonl"), "w", encoding="utf-8") as memory_file:
+                memory_file.write(
+                    json.dumps(
+                        {
+                            "event": "step",
+                            "feedback_result": "counter_changed",
+                            "action": {"type": "hold_drag_release"},
+                            "state_id": "state_old",
+                        }
+                    )
+                    + "\n"
+                )
+            config = GameReverseConfig(
+                device_uri="Android:///",
+                package_name="com.example.game",
+                max_steps=2,
+                output_root=output_root,
+                profile_root=profile_root,
+                allowed_actions=["screenshot", "wait"],
+                mission=Mission(type="free_explore", goal="Explore", targets=["play"]),
+            )
+            decider = MemoryRecordingDecider()
+
+            run_loop(
+                config,
+                executor=ByteChangingScreenshotExecutor(),
+                decider=decider,
+                session_name="memory-enhanced-run",
+            )
+
+            with open(os.path.join(profile_dir, "skills.json"), encoding="utf-8") as skills_file:
+                skills = json.load(skills_file)["skills"]
+            with open(os.path.join(profile_dir, "state_map.json"), encoding="utf-8") as state_file:
+                state_map = json.load(state_file)
+
+        self.assertTrue(any("known_aim_skill" in summary for summary in decider.memory_summaries))
+        self.assertTrue(
+            any(
+                skill["name"].startswith("skill_from_") and skill["success_signal"] == "counter_changed"
+                for skill in skills
+            )
+        )
+        self.assertTrue(all("session_name" in transition for transition in state_map["transitions"]))
 
     def test_writes_feedback_and_run_summary_for_run(self):
         with tempfile.TemporaryDirectory() as tmpdir:

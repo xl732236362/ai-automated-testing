@@ -159,6 +159,33 @@ class TestLLMDecider(unittest.TestCase):
 
         self.assertIn("hold_drag_release", action_type["enum"])
 
+    def test_parses_structured_progress_observation(self):
+        decision = parse_decision(
+            """{
+              "screen_summary": "level gameplay",
+              "state": "level_5",
+              "action": {"type": "wait", "seconds": 1},
+              "reason": "observe",
+              "new_findings": [],
+              "screenshot_tags": [],
+              "risks": [],
+              "progress": {
+                "level_label": "Level 5",
+                "target_counts": [3, 3, 3, 6, 3, 3],
+                "terminal_state": ""
+              }
+            }"""
+        )
+
+        self.assertEqual(decision["progress"]["level_label"], "Level 5")
+        self.assertEqual(decision["progress"]["target_counts"], [3, 3, 3, 6, 3, 3])
+
+    def test_decision_schema_allows_structured_progress(self):
+        schema = _decision_schema()
+
+        self.assertIn("progress", schema["properties"])
+        self.assertIn("target_counts", schema["properties"]["progress"]["properties"])
+
     def test_decision_prompt_includes_feedback_strategy_from_recent_actions(self):
         mission = Mission(type="free_explore", goal="Explore", targets=["target"])
         recent_actions = [
@@ -183,6 +210,40 @@ class TestLLMDecider(unittest.TestCase):
         self.assertIn("switch_gesture", prompt)
         self.assertIn("hold_drag_release", prompt)
         self.assertIn("repeated no-change feedback", prompt)
+
+    def test_decision_prompt_includes_verified_progress_from_recent_actions(self):
+        mission = Mission(type="free_explore", goal="Clear level", targets=["target"])
+        recent_actions = [
+            {
+                "step": 4,
+                "screen": "screens/step_0004.png",
+                "action": {"type": "hold_drag_release", "x1": 520, "y1": 805, "x2": 650, "y2": 735},
+                "result": "executed",
+                "feedback_result": "counter_changed",
+                "before_counts": [3, 3, 3, 6, 3, 3],
+                "after_counts": [3, 3, 2, 6, 3, 3],
+                "progress_delta": 1,
+            }
+        ]
+
+        prompt = _build_decision_prompt(mission, recent_actions, "")
+
+        self.assertIn("before_counts", prompt)
+        self.assertIn("after_counts", prompt)
+        self.assertIn("progress_delta", prompt)
+
+    def test_decision_prompt_includes_profile_memory_summary(self):
+        mission = Mission(type="free_explore", goal="Clear level", targets=["target"])
+
+        prompt = _build_decision_prompt(
+            mission,
+            [],
+            "",
+            memory_summary="skill: aim_at_target confidence=0.80 signal=counter_changed",
+        )
+
+        self.assertIn("Learned memory:", prompt)
+        self.assertIn("aim_at_target", prompt)
 
     def _restore_file(self, path, old_content):
         if old_content is None:
