@@ -177,6 +177,16 @@ class TestGameReverseActions(unittest.TestCase):
                 (1080, 1920),
             )
 
+    def test_rejects_raw_pointer_commands_as_public_actions(self):
+        for action_type in ("touch_down", "touch_move", "touch_hold", "touch_up"):
+            with self.subTest(action_type=action_type):
+                with self.assertRaisesRegex(ValueError, "not allowed"):
+                    validate_action(
+                        {"type": action_type, "x": 10, "y": 20, "seconds": 0.1},
+                        [action_type],
+                        (1080, 1920),
+                    )
+
 
 if __name__ == "__main__":
     unittest.main()
