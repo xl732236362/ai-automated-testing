@@ -80,6 +80,39 @@ class TestSkillLibrary(unittest.TestCase):
         self.assertGreater(skill["confidence"], 0.6)
         self.assertEqual(skill["run_count"], 1)
 
+    def test_replays_targeted_steps_as_resolved_actions(self):
+        library = SkillLibrary(
+            [
+                {
+                    "name": "tap_start",
+                    "trigger": {"state_labels": ["main_menu"]},
+                    "steps": [
+                        {
+                            "type": "tap_target",
+                            "target": {"bounds": [100, 200, 220, 260]},
+                            "target_ref": "start_button",
+                        }
+                    ],
+                    "confidence": 0.8,
+                }
+            ]
+        )
+        skill = library.skills[0]
+        executor = FakeExecutor()
+
+        attempt = library.replay(
+            skill,
+            executor=executor,
+            screen_path="screens/step_0001.png",
+            screen_size=(1080, 1920),
+            allowed_actions=["tap_target"],
+        )
+
+        self.assertTrue(attempt["success"])
+        self.assertEqual(executor.executed[0]["type"], "tap")
+        self.assertEqual(executor.executed[0]["x"], 160)
+        self.assertEqual(executor.executed[0]["target_ref"], "start_button")
+
     def test_failed_replay_decreases_confidence(self):
         library = SkillLibrary(
             [

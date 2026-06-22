@@ -18,6 +18,98 @@ class TestGameReverseActions(unittest.TestCase):
 
         self.assertEqual(action, {"type": "tap", "x": 100, "y": 200})
 
+    def test_resolves_tap_target_to_center_tap(self):
+        action = validate_action(
+            {
+                "type": "tap_target",
+                "target": {
+                    "kind": "ocr",
+                    "text": "Start",
+                    "bounds": [100, 200, 220, 260],
+                },
+                "target_ref": "start_button",
+            },
+            ["tap_target"],
+            (1080, 1920),
+        )
+
+        self.assertEqual(
+            action,
+            {
+                "type": "tap",
+                "x": 160,
+                "y": 230,
+                "target_ref": "start_button",
+                "target": {
+                    "kind": "ocr",
+                    "text": "Start",
+                    "bounds": [100, 200, 220, 260],
+                },
+            },
+        )
+
+    def test_resolves_swipe_target_to_region_swipe(self):
+        action = validate_action(
+            {
+                "type": "swipe_target",
+                "target": {"bounds": [100, 200, 300, 500]},
+                "direction": "up",
+                "distance": 120,
+                "duration": 0.7,
+            },
+            ["swipe_target"],
+            (1080, 1920),
+        )
+
+        self.assertEqual(
+            action,
+            {
+                "type": "swipe",
+                "x1": 200,
+                "y1": 350,
+                "x2": 200,
+                "y2": 230,
+                "duration": 0.7,
+                "target": {"bounds": [100, 200, 300, 500]},
+            },
+        )
+
+    def test_resolves_hold_drag_target_between_regions(self):
+        action = validate_action(
+            {
+                "type": "hold_drag_target",
+                "source": {"bounds": [100, 200, 200, 300]},
+                "target": {"bounds": [400, 700, 500, 900]},
+                "hold_seconds": 0.4,
+                "duration": 1.1,
+            },
+            ["hold_drag_target"],
+            (1080, 1920),
+        )
+
+        self.assertEqual(
+            action,
+            {
+                "type": "hold_drag_release",
+                "x1": 150,
+                "y1": 250,
+                "x2": 450,
+                "y2": 800,
+                "hold_seconds": 0.4,
+                "duration": 1.1,
+                "source": {"bounds": [100, 200, 200, 300]},
+                "target": {"bounds": [400, 700, 500, 900]},
+            },
+        )
+
+    def test_rejects_target_outside_screen(self):
+        with self.assertRaisesRegex(ValueError, "target bounds"):
+            validate_action(
+                {"type": "tap_target", "target": {"bounds": [100, 200, 2000, 300]}},
+                ["tap_target"],
+                (1080, 1920),
+            )
+
     def test_rejects_disallowed_action(self):
         with self.assertRaisesRegex(ValueError, "not allowed"):
             validate_action({"type": "shell", "cmd": "pm clear app"}, ["tap"], (1080, 1920))
