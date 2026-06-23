@@ -11,6 +11,7 @@ from game_reverse.actions import validate_action
 from game_reverse.airtest_executor import AirtestExecutor
 from game_reverse.affordances import AffordanceMemory
 from game_reverse.config import load_config
+from game_reverse.continuous_control import AimController
 from game_reverse.feedback import classify_feedback, recommend_next_strategy
 from game_reverse.goal_planner import GoalPlanner
 from game_reverse.journal import Journal
@@ -81,6 +82,10 @@ def run_loop(config, executor=None, decider=None, session_name=None, context=Non
                 "ui_nodes": [],
                 "visual_regions": [],
                 "proposed_regions": [],
+                "detected_controls": [],
+                "detected_cursors": [],
+                "detected_targets": [],
+                "control_hypothesis": {},
                 "progress": {},
             }
             skill_result = _try_skill(
@@ -177,7 +182,14 @@ def run_loop(config, executor=None, decider=None, session_name=None, context=Non
             action = validate_action(decision["action"], config.allowed_actions, screen_size)
             if action["type"] == "screenshot":
                 action = {"type": "wait", "seconds": 1}
-            result = executor.execute(action, screen_path)
+            control_result = None
+            if action["type"] == "aim_fire":
+                if not getattr(config, "enable_continuous_actions", False):
+                    raise ValueError("enable_continuous_actions is required for aim_fire")
+                control_result = AimController(executor, journal, screen_size).execute(action, step)
+                result = control_result["result"]
+            else:
+                result = executor.execute(action, screen_path)
             post_screen_path, relative_post_screen, post_screenshot_hash = _capture_post_action_screen(
                 executor,
                 journal,
@@ -193,6 +205,9 @@ def run_loop(config, executor=None, decider=None, session_name=None, context=Non
                 "reason": decision.get("reason", ""),
                 "result": result,
             }
+            if control_result is not None:
+                action_record["control_events"] = control_result.get("control_events", [])
+                action_record["control_feedback"] = control_result.get("control_feedback", "")
             observation_record = {
                 "step": step,
                 "mission_type": config.mission.type,
@@ -209,8 +224,14 @@ def run_loop(config, executor=None, decider=None, session_name=None, context=Non
                 "ui_nodes": decision.get("ui_nodes", []),
                 "visual_regions": decision.get("visual_regions", []),
                 "proposed_regions": decision.get("proposed_regions", []),
+                "detected_controls": decision.get("detected_controls", []),
+                "detected_cursors": decision.get("detected_cursors", []),
+                "detected_targets": decision.get("detected_targets", []),
+                "control_hypothesis": decision.get("control_hypothesis", {}),
                 "progress": normalize_progress(decision.get("progress")),
             }
+            if control_result is not None:
+                observation_record["control_feedback"] = control_result.get("control_feedback", "")
             observation_record["verified_progress"] = compare_progress(
                 (previous_observation or {}).get("progress"),
                 observation_record.get("progress"),

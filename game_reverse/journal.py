@@ -24,6 +24,7 @@ class Journal:
             "skill_attempts.jsonl",
             "goal_events.jsonl",
             "feedback.jsonl",
+            "control_sessions.jsonl",
         ):
             path = os.path.join(session_dir, filename)
             if not os.path.exists(path):
@@ -42,6 +43,12 @@ class Journal:
     def post_action_screen_path(self, step):
         return os.path.join(self.screens_dir, "post_step_%04d.png" % step)
 
+    def control_screen_path(self, step, phase, index):
+        return os.path.join(
+            self.screens_dir,
+            "control_step_%04d_%s_%02d.png" % (step, phase, index),
+        )
+
     def write_action(self, record):
         self._append_jsonl("actions.jsonl", record)
 
@@ -59,6 +66,9 @@ class Journal:
 
     def write_feedback(self, record):
         self._append_jsonl("feedback.jsonl", record)
+
+    def write_control_event(self, record):
+        self._append_jsonl("control_sessions.jsonl", record)
 
     def write_state_map(self, state_map):
         path = os.path.join(self.session_dir, "state_map.json")

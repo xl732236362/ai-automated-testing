@@ -151,6 +151,27 @@ class TestGameReverseJournal(unittest.TestCase):
         self.assertEqual(feedback["result"], "visual_changed")
         self.assertEqual(summary["session_id"], "test-session")
 
+    def test_writes_control_session_events_and_paths(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            journal = Journal.create(tmpdir, session_name="test-session")
+            screen_path = journal.control_screen_path(step=3, phase="hold", index=1)
+            journal.write_control_event(
+                {
+                    "step": 3,
+                    "phase": "hold",
+                    "screen": os.path.relpath(screen_path, journal.session_dir),
+                    "result": "captured",
+                }
+            )
+
+            events_path = os.path.join(journal.session_dir, "control_sessions.jsonl")
+            with open(events_path, "r", encoding="utf-8") as events_file:
+                event = json.loads(events_file.readline())
+
+        self.assertEqual(os.path.basename(screen_path), "control_step_0003_hold_01.png")
+        self.assertEqual(event["phase"], "hold")
+        self.assertIn("control_step_0003_hold_01.png", event["screen"])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -14,6 +14,8 @@ from game_reverse.run_loop import run_loop
 class FakeExecutor:
     def __init__(self):
         self.executed = []
+        self.pointer_commands = []
+        self.released = False
 
     def connect(self, device_uri):
         self.device_uri = device_uri
@@ -27,6 +29,14 @@ class FakeExecutor:
             with open(screen_path, "wb") as screen_file:
                 screen_file.write(b"fake png")
         return "executed"
+
+    def execute_pointer_command(self, command):
+        self.pointer_commands.append(dict(command))
+        return "executed"
+
+    def release_active_pointer(self):
+        self.released = True
+        return True
 
 
 class FailingSkillExecutor(FakeExecutor):
@@ -238,6 +248,34 @@ class AffordanceDecider:
             "ui_nodes": [{"text": "Start", "class": "Button", "bounds": [102, 201, 222, 261]}],
             "visual_regions": [{"bounds": [500, 900, 700, 1050], "reason": "large button"}],
             "proposed_regions": [{"bounds": [100, 200, 220, 260], "label": "start button"}],
+        }
+
+
+class AimFireDecider:
+    def decide(self, screen_path, mission, recent_actions, mission_draft):
+        return {
+            "screen_summary": "Level gameplay with launcher and crosshair",
+            "state": "level_gameplay",
+            "action": {
+                "type": "aim_fire",
+                "control": {"x": 450, "y": 1175, "role": "fire_button"},
+                "cursor": {"x": 500, "y": 800, "role": "crosshair"},
+                "target": {"x": 420, "y": 760, "role": "collectible", "label": "milk carton"},
+                "hold_seconds": 0.2,
+                "max_adjustments": 2,
+            },
+            "reason": "hold fire and move crosshair toward target",
+            "new_findings": [],
+            "screenshot_tags": ["aiming"],
+            "risks": [],
+            "detected_controls": [{"x": 450, "y": 1175, "role": "fire_button"}],
+            "detected_cursors": [{"x": 500, "y": 800, "role": "crosshair"}],
+            "detected_targets": [{"x": 420, "y": 760, "role": "collectible", "label": "milk carton"}],
+            "control_hypothesis": {
+                "gesture": "hold_adjust_release",
+                "reason": "launcher requires continuous aim",
+                "confidence": "medium",
+            },
         }
 
 
@@ -499,6 +537,41 @@ class TestRunLoop(unittest.TestCase):
         self.assertEqual(len(state_affordances), 2)
         self.assertEqual(start_affordance["last_result"], "no_visible_change")
         self.assertEqual(start_affordance["status"], "deprioritized")
+
+    def test_executes_aim_fire_through_continuous_controller(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config = GameReverseConfig(
+                device_uri="Android:///",
+                package_name="com.example.game",
+                max_steps=1,
+                output_root=tmpdir,
+                profile_enabled=False,
+                allowed_actions=["screenshot", "wait", "aim_fire"],
+                enable_continuous_actions=True,
+                mission=Mission(type="free_explore", goal="Collect target", targets=["milk"]),
+            )
+            executor = FakeExecutor()
+
+            session_dir = run_loop(
+                config,
+                executor=executor,
+                decider=AimFireDecider(),
+                session_name="aim-fire-session",
+            )
+
+            with open(os.path.join(session_dir, "actions.jsonl"), encoding="utf-8") as action_file:
+                actions = [json.loads(line) for line in action_file if line.strip()]
+            with open(os.path.join(session_dir, "observations.jsonl"), encoding="utf-8") as observation_file:
+                observations = [json.loads(line) for line in observation_file if line.strip()]
+            with open(os.path.join(session_dir, "control_sessions.jsonl"), encoding="utf-8") as control_file:
+                control_events = [json.loads(line) for line in control_file if line.strip()]
+
+        self.assertEqual([command["type"] for command in executor.pointer_commands], ["touch_down", "touch_hold", "touch_move", "touch_up"])
+        self.assertEqual(actions[0]["action"]["type"], "aim_fire")
+        self.assertEqual(actions[0]["control_feedback"], "control_released_safely")
+        self.assertEqual(observations[0]["detected_targets"][0]["label"], "milk carton")
+        self.assertEqual(observations[0]["control_hypothesis"]["gesture"], "hold_adjust_release")
+        self.assertTrue(any(event["phase"] == "adjust" for event in control_events))
 
     def test_records_richer_visual_feedback_fields(self):
         with tempfile.TemporaryDirectory() as tmpdir:
