@@ -21,6 +21,7 @@ class GameReverseConfig:
     profile_root: str = "game_reverse/profiles"
     profile_enabled: bool = True
     allowed_actions: list = field(default_factory=lambda: list(DEFAULT_ALLOWED_ACTIONS))
+    enable_continuous_actions: bool = False
     recent_steps: int = 5
     llm_retry_count: int = 1
     consecutive_failure_limit: int = 3
@@ -48,6 +49,7 @@ def load_config(path):
         profile_root=raw.get("profile_root", "game_reverse/profiles"),
         profile_enabled=raw.get("profile_enabled", True),
         allowed_actions=list(raw.get("allowed_actions", DEFAULT_ALLOWED_ACTIONS)),
+        enable_continuous_actions=raw.get("enable_continuous_actions", False),
         recent_steps=raw.get("recent_steps", 5),
         llm_retry_count=raw.get("llm_retry_count", 1),
         consecutive_failure_limit=raw.get("consecutive_failure_limit", 3),

@@ -8,6 +8,7 @@ SAFE_ACTIONS = {
     "tap",
     "swipe",
     "hold_drag_release",
+    "aim_fire",
     "tap_target",
     "swipe_target",
     "hold_drag_target",
@@ -120,6 +121,28 @@ def validate_action(action, allowed_actions, screen_size):
             "hold_seconds": hold_seconds,
             "duration": duration,
         }
+    if action_type == "aim_fire":
+        control = _validate_point_anchor(action, "control", width, height)
+        target = _validate_point_anchor(action, "target", width, height)
+        cursor = None
+        if action.get("cursor") is not None:
+            cursor = _validate_point_anchor(action, "cursor", width, height)
+        hold_seconds = action.get("hold_seconds", 0.3)
+        if not isinstance(hold_seconds, (int, float)) or hold_seconds < 0 or hold_seconds > 5:
+            raise ValueError("hold seconds must be between 0 and 5")
+        max_adjustments = action.get("max_adjustments", 3)
+        if not isinstance(max_adjustments, int) or max_adjustments < 0 or max_adjustments > 10:
+            raise ValueError("max_adjustments must be an integer between 0 and 10")
+        resolved = {
+            "type": "aim_fire",
+            "control": control,
+            "target": target,
+            "hold_seconds": hold_seconds,
+            "max_adjustments": max_adjustments,
+        }
+        if cursor is not None:
+            resolved["cursor"] = cursor
+        return resolved
     if action_type == "hold_drag_target":
         source = _validate_target(action, "source", width, height)
         target = _validate_target(action, "target", width, height)
@@ -153,6 +176,21 @@ def _validate_point(x, y, width, height):
         raise ValueError("coordinates must be integers")
     if x < 0 or y < 0 or x >= width or y >= height:
         raise ValueError("coordinates out of bounds")
+
+
+def _validate_point_anchor(action, field_name, width, height):
+    anchor = action.get(field_name)
+    if not isinstance(anchor, dict):
+        raise ValueError("%s must be an object" % field_name)
+    x = anchor.get("x")
+    y = anchor.get("y")
+    try:
+        _validate_point(x, y, width, height)
+    except ValueError as exc:
+        raise ValueError("%s %s" % (field_name, exc)) from exc
+    resolved = {"x": x, "y": y}
+    _copy_optional_fields(resolved, anchor, ("role", "label"))
+    return resolved
 
 
 def _validate_target(action, field_name, width, height):

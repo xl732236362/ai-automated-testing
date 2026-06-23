@@ -14,6 +14,8 @@ from game_reverse.target_discovery import TargetDiscovery, TargetDiscoveryError
 
 
 UNSAFE_ACTIONS = {"tap", "swipe", "hold_drag_release"}
+CONTINUOUS_ACTIONS = {"aim_fire"}
+INTERNAL_POINTER_ACTIONS = {"touch_down", "touch_move", "touch_hold", "touch_up"}
 
 
 class ValidationError(ValueError):
@@ -45,6 +47,7 @@ class GameReverseWebService:
             "profile_root": self.profile_root,
             "default_allowed_actions": list(DEFAULT_ALLOWED_ACTIONS),
             "unsafe_actions": sorted(UNSAFE_ACTIONS),
+            "continuous_actions": sorted(CONTINUOUS_ACTIONS),
         }
 
     def list_devices(self):
@@ -169,10 +172,17 @@ class GameReverseWebService:
             raise ValidationError("max_steps must be a positive int")
 
         allowed_actions = list(payload.get("allowed_actions") or DEFAULT_ALLOWED_ACTIONS)
+        if INTERNAL_POINTER_ACTIONS.intersection(allowed_actions):
+            raise ValidationError("raw pointer commands are internal")
         if UNSAFE_ACTIONS.intersection(allowed_actions) and not payload.get(
             "enable_unsafe_actions"
         ):
             raise ValidationError("enable_unsafe_actions is required for tap or swipe")
+        if CONTINUOUS_ACTIONS.intersection(allowed_actions):
+            if not payload.get("enable_unsafe_actions"):
+                raise ValidationError("enable_unsafe_actions is required for continuous actions")
+            if not payload.get("enable_continuous_actions"):
+                raise ValidationError("enable_continuous_actions is required for continuous actions")
 
         return GameReverseConfig(
             device_uri=payload.get("device_uri", "Android:///"),
@@ -184,6 +194,7 @@ class GameReverseWebService:
             profile_root=payload.get("profile_root", self.profile_root),
             profile_enabled=payload.get("profile_enabled", True),
             allowed_actions=allowed_actions,
+            enable_continuous_actions=payload.get("enable_continuous_actions", False),
             recent_steps=payload.get("recent_steps", 5),
             llm_retry_count=payload.get("llm_retry_count", 1),
             consecutive_failure_limit=payload.get("consecutive_failure_limit", 3),

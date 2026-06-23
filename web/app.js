@@ -13,10 +13,12 @@ const ACTION_LABELS = {
   tap: "点击",
   swipe: "滑动",
   hold_drag_release: "按住拖放",
+  aim_fire: "瞄准发射",
   error: "错误",
 };
 
 const UNSAFE_ACTIONS = ["tap", "swipe", "hold_drag_release"];
+const CONTINUOUS_ACTIONS = ["aim_fire"];
 
 document.addEventListener("DOMContentLoaded", () => {
   const root = document.getElementById("app");
@@ -24,6 +26,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   wireStartButton();
   wireUnsafeActionToggle();
+  wireContinuousActionToggle();
   wireTargetConfigControls();
   Promise.all([loadSample(sampleUrl), detectBackend(), detectBackendConfig()])
     .then(([sample, health, backendConfig]) => {
@@ -141,9 +144,15 @@ function renderAllowedActions(actions) {
   row.replaceChildren(
     ...effectiveActions.map((action) => {
       const chip = document.createElement("span");
-      chip.className = UNSAFE_ACTIONS.includes(action) ? "action-chip is-risky" : "action-chip";
+      chip.className =
+        UNSAFE_ACTIONS.includes(action) || CONTINUOUS_ACTIONS.includes(action)
+          ? "action-chip is-risky"
+          : "action-chip";
       chip.textContent = ACTION_LABELS[action] || action;
-      chip.title = UNSAFE_ACTIONS.includes(action) ? "已显式允许真实设备交互" : "默认安全动作";
+      chip.title =
+        UNSAFE_ACTIONS.includes(action) || CONTINUOUS_ACTIONS.includes(action)
+          ? "已显式允许真实设备交互"
+          : "默认安全动作";
       return chip;
     })
   );
@@ -152,6 +161,7 @@ function renderAllowedActions(actions) {
   if (panel) {
     panel.classList.toggle("is-enabled", getUnsafeActionsEnabled());
   }
+  updateContinuousActionToggleState();
 }
 
 function renderTimeline(steps) {
@@ -236,6 +246,21 @@ function wireUnsafeActionToggle() {
   }
   toggle.checked = false;
   toggle.addEventListener("change", () => {
+    updateContinuousActionToggleState();
+    if (currentData) {
+      renderAllowedActions(currentData.config.allowed_actions);
+    }
+  });
+}
+
+function wireContinuousActionToggle() {
+  const toggle = document.getElementById("allow-continuous-actions-input");
+  if (!toggle) {
+    return;
+  }
+  toggle.checked = false;
+  updateContinuousActionToggleState();
+  toggle.addEventListener("change", () => {
     if (currentData) {
       renderAllowedActions(currentData.config.allowed_actions);
     }
@@ -247,14 +272,40 @@ function getUnsafeActionsEnabled() {
   return Boolean(toggle && toggle.checked);
 }
 
+function getContinuousActionsEnabled() {
+  const toggle = document.getElementById("allow-continuous-actions-input");
+  return Boolean(toggle && toggle.checked && getUnsafeActionsEnabled());
+}
+
 function getEffectiveAllowedActions(config) {
   const baseActions = (config.allowed_actions || []).filter(
-    (action) => !UNSAFE_ACTIONS.includes(action)
+    (action) => !UNSAFE_ACTIONS.includes(action) && !CONTINUOUS_ACTIONS.includes(action)
   );
   if (!getUnsafeActionsEnabled()) {
     return baseActions;
   }
-  return Array.from(new Set([...baseActions, ...UNSAFE_ACTIONS]));
+  const actions = [...baseActions, ...UNSAFE_ACTIONS];
+  if (getContinuousActionsEnabled()) {
+    actions.push(...CONTINUOUS_ACTIONS);
+  }
+  return Array.from(new Set(actions));
+}
+
+function updateContinuousActionToggleState() {
+  const toggle = document.getElementById("allow-continuous-actions-input");
+  const panel = document.getElementById("continuous-actions-panel");
+  if (!toggle) {
+    return;
+  }
+  const enabled = getUnsafeActionsEnabled();
+  toggle.disabled = !enabled;
+  if (!enabled) {
+    toggle.checked = false;
+  }
+  if (panel) {
+    panel.classList.toggle("is-enabled", enabled && toggle.checked);
+    panel.classList.toggle("is-disabled", !enabled);
+  }
 }
 
 function wireTargetConfigControls() {
@@ -727,6 +778,7 @@ function buildRunPayload(config) {
     recent_steps: config.recent_steps,
     consecutive_failure_limit: config.consecutive_failure_limit,
     enable_unsafe_actions: getUnsafeActionsEnabled(),
+    enable_continuous_actions: getContinuousActionsEnabled(),
   };
 }
 

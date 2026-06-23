@@ -177,6 +177,39 @@ class TestGameReverseActions(unittest.TestCase):
                 (1080, 1920),
             )
 
+    def test_accepts_aim_fire_action_with_control_cursor_and_target(self):
+        action = validate_action(
+            {
+                "type": "aim_fire",
+                "control": {"x": 450, "y": 1175, "role": "fire_button"},
+                "cursor": {"x": 448, "y": 800, "role": "crosshair"},
+                "target": {"x": 205, "y": 842, "role": "collectible", "label": "milk carton"},
+                "hold_seconds": 0.4,
+                "max_adjustments": 3,
+            },
+            ["aim_fire"],
+            (1080, 1920),
+        )
+
+        self.assertEqual(action["type"], "aim_fire")
+        self.assertEqual(action["control"]["x"], 450)
+        self.assertEqual(action["target"]["label"], "milk carton")
+        self.assertEqual(action["hold_seconds"], 0.4)
+        self.assertEqual(action["max_adjustments"], 3)
+
+    def test_rejects_aim_fire_with_out_of_bounds_anchor(self):
+        with self.assertRaisesRegex(ValueError, "target"):
+            validate_action(
+                {
+                    "type": "aim_fire",
+                    "control": {"x": 450, "y": 1175},
+                    "cursor": {"x": 448, "y": 800},
+                    "target": {"x": 2000, "y": 842},
+                },
+                ["aim_fire"],
+                (1080, 1920),
+            )
+
     def test_rejects_raw_pointer_commands_as_public_actions(self):
         for action_type in ("touch_down", "touch_move", "touch_hold", "touch_up"):
             with self.subTest(action_type=action_type):

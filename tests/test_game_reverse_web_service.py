@@ -285,6 +285,7 @@ class TestGameReverseWebService(unittest.TestCase):
 
         self.assertNotIn("hold_drag_release", config["default_allowed_actions"])
         self.assertIn("hold_drag_release", config["unsafe_actions"])
+        self.assertIn("aim_fire", config["continuous_actions"])
 
     def test_profile_summary_exposes_learned_profile(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -596,6 +597,36 @@ class TestGameReverseWebService(unittest.TestCase):
 
         with self.assertRaisesRegex(ValidationError, "enable_unsafe_actions"):
             service.start_run(payload)
+
+    def test_rejects_aim_fire_without_unsafe_opt_in(self):
+        service = self.make_service()
+        payload = self.valid_payload()
+        payload["allowed_actions"] = ["screenshot", "wait", "aim_fire"]
+
+        with self.assertRaisesRegex(ValidationError, "enable_unsafe_actions"):
+            service.start_run(payload)
+
+    def test_rejects_aim_fire_without_continuous_opt_in(self):
+        service = self.make_service()
+        payload = self.valid_payload()
+        payload["allowed_actions"] = ["screenshot", "wait", "aim_fire"]
+        payload["enable_unsafe_actions"] = True
+
+        with self.assertRaisesRegex(ValidationError, "enable_continuous_actions"):
+            service.start_run(payload)
+
+    def test_accepts_aim_fire_when_both_opt_ins_are_enabled(self):
+        service = self.make_service()
+        payload = self.valid_payload()
+        payload["allowed_actions"] = ["screenshot", "wait", "aim_fire"]
+        payload["enable_unsafe_actions"] = True
+        payload["enable_continuous_actions"] = True
+
+        result = service.start_run(payload)
+        self.wait_for_status(service, result["id"], "completed")
+
+        self.assertTrue(self.runner.configs[0].enable_continuous_actions)
+        self.assertIn("aim_fire", self.runner.configs[0].allowed_actions)
 
     def test_session_report_reads_final_report(self):
         service = self.make_service()

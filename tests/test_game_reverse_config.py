@@ -50,6 +50,7 @@ class TestGameReverseConfig(unittest.TestCase):
         self.assertEqual(config.consecutive_failure_limit, 3)
         self.assertEqual(config.profile_root, "game_reverse/profiles")
         self.assertTrue(config.profile_enabled)
+        self.assertFalse(config.enable_continuous_actions)
 
     def test_default_allowed_actions_do_not_include_hold_drag_release(self):
         self.assertNotIn("hold_drag_release", DEFAULT_ALLOWED_ACTIONS)
@@ -95,6 +96,18 @@ class TestGameReverseConfig(unittest.TestCase):
 
         self.assertEqual(config.profile_root, "tmp/profiles")
         self.assertFalse(config.profile_enabled)
+
+    def test_continuous_actions_can_be_enabled(self):
+        path = self.write_config(
+            {
+                "package_name": "com.example.game",
+                "enable_continuous_actions": True,
+            }
+        )
+
+        config = load_config(path)
+
+        self.assertTrue(config.enable_continuous_actions)
 
 
 if __name__ == "__main__":
