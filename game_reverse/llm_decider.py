@@ -55,7 +55,15 @@ def _fill_decision_defaults(decision):
     decision.setdefault("new_findings", [])
     decision.setdefault("screenshot_tags", [])
     decision.setdefault("risks", [])
+    decision.setdefault("detected_controls", [])
+    decision.setdefault("detected_cursors", [])
+    decision.setdefault("detected_targets", [])
+    decision.setdefault("control_hypothesis", {})
     decision["new_findings"] = _normalize_findings(decision["new_findings"])
+    decision["detected_controls"] = _normalize_visual_anchors(decision["detected_controls"])
+    decision["detected_cursors"] = _normalize_visual_anchors(decision["detected_cursors"])
+    decision["detected_targets"] = _normalize_visual_anchors(decision["detected_targets"])
+    decision["control_hypothesis"] = _normalize_control_hypothesis(decision["control_hypothesis"])
 
 
 def _normalize_findings(findings):
@@ -83,6 +91,37 @@ def _normalize_findings(findings):
                 }
             )
     return normalized
+
+
+def _normalize_visual_anchors(anchors):
+    if not isinstance(anchors, list):
+        return []
+
+    normalized = []
+    for anchor in anchors:
+        if not isinstance(anchor, dict):
+            continue
+        item = {
+            "role": anchor.get("role", ""),
+            "bounds": anchor.get("bounds", []),
+            "confidence": anchor.get("confidence", 0),
+        }
+        if anchor.get("label"):
+            item["label"] = anchor.get("label")
+        normalized.append(item)
+    return normalized
+
+
+def _normalize_control_hypothesis(hypothesis):
+    if not isinstance(hypothesis, dict):
+        return {}
+    if not hypothesis:
+        return {}
+    return {
+        "type": hypothesis.get("type", ""),
+        "confidence": hypothesis.get("confidence", 0),
+        "evidence": hypothesis.get("evidence", ""),
+    }
 
 
 def _response_preview(text):
@@ -197,7 +236,11 @@ def _build_decision_prompt(mission, recent_actions, mission_draft, memory_summar
         '  "new_findings": [],\n'
         '  "screenshot_tags": [],\n'
         '  "risks": [],\n'
-        '  "progress": {"level_label": "", "target_counts": [], "terminal_state": ""}\n'
+        '  "progress": {"level_label": "", "target_counts": [], "terminal_state": ""},\n'
+        '  "detected_controls": [],\n'
+        '  "detected_cursors": [],\n'
+        '  "detected_targets": [],\n'
+        '  "control_hypothesis": {}\n'
         "}"
     ) % (
         mission.type,
@@ -306,7 +349,42 @@ def _decision_schema():
                 "required": ["level_label", "target_counts", "terminal_state"],
                 "additionalProperties": False,
             },
+            "detected_controls": _visual_anchor_array_schema(),
+            "detected_cursors": _visual_anchor_array_schema(),
+            "detected_targets": _visual_anchor_array_schema(),
+            "control_hypothesis": {
+                "type": "object",
+                "properties": {
+                    "type": {"type": "string"},
+                    "confidence": {"type": "number"},
+                    "evidence": {"type": "string"},
+                },
+                "required": ["type", "confidence", "evidence"],
+                "additionalProperties": False,
+            },
         },
         "required": REQUIRED_DECISION_FIELDS,
         "additionalProperties": False,
+    }
+
+
+def _visual_anchor_array_schema():
+    return {
+        "type": "array",
+        "items": {
+            "type": "object",
+            "properties": {
+                "role": {"type": "string"},
+                "label": {"type": "string"},
+                "bounds": {
+                    "type": "array",
+                    "items": {"type": "integer"},
+                    "minItems": 4,
+                    "maxItems": 4,
+                },
+                "confidence": {"type": "number"},
+            },
+            "required": ["role", "bounds", "confidence"],
+            "additionalProperties": False,
+        },
     }

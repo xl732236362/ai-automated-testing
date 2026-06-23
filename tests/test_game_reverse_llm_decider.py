@@ -59,6 +59,10 @@ class TestLLMDecider(unittest.TestCase):
         self.assertEqual(decision["new_findings"], [])
         self.assertEqual(decision["screenshot_tags"], [])
         self.assertEqual(decision["risks"], [])
+        self.assertEqual(decision["detected_controls"], [])
+        self.assertEqual(decision["detected_cursors"], [])
+        self.assertEqual(decision["detected_targets"], [])
+        self.assertEqual(decision["control_hypothesis"], {})
 
     def test_normalizes_string_findings_from_gpt_pool_responses(self):
         decision = parse_decision(
@@ -186,6 +190,51 @@ class TestLLMDecider(unittest.TestCase):
         self.assertIn("progress", schema["properties"])
         self.assertIn("target_counts", schema["properties"]["progress"]["properties"])
 
+    def test_parses_visual_anchors_and_control_hypothesis(self):
+        decision = parse_decision(
+            """{
+              "screen_summary": "aiming screen",
+              "state": "level_5",
+              "action": {"type": "wait", "seconds": 1},
+              "reason": "observe anchors",
+              "new_findings": [],
+              "screenshot_tags": [],
+              "risks": [],
+              "detected_controls": [
+                {"role": "fire_button", "bounds": [410, 1130, 500, 1230], "confidence": 0.7}
+              ],
+              "detected_cursors": [
+                {"role": "crosshair", "bounds": [430, 780, 470, 820], "confidence": 0.8}
+              ],
+              "detected_targets": [
+                {
+                  "role": "collectible",
+                  "label": "milk carton",
+                  "bounds": [180, 810, 230, 870],
+                  "confidence": 0.75
+                }
+              ],
+              "control_hypothesis": {
+                "type": "hold_to_aim_then_release",
+                "confidence": 0.65,
+                "evidence": "crosshair and fire control are visible"
+              }
+            }"""
+        )
+
+        self.assertEqual(decision["detected_controls"][0]["role"], "fire_button")
+        self.assertEqual(decision["detected_cursors"][0]["bounds"], [430, 780, 470, 820])
+        self.assertEqual(decision["detected_targets"][0]["label"], "milk carton")
+        self.assertEqual(decision["control_hypothesis"]["type"], "hold_to_aim_then_release")
+
+    def test_decision_schema_allows_visual_anchors(self):
+        schema = _decision_schema()
+
+        self.assertIn("detected_controls", schema["properties"])
+        self.assertIn("detected_cursors", schema["properties"])
+        self.assertIn("detected_targets", schema["properties"])
+        self.assertIn("control_hypothesis", schema["properties"])
+
     def test_decision_prompt_includes_feedback_strategy_from_recent_actions(self):
         mission = Mission(type="free_explore", goal="Explore", targets=["target"])
         recent_actions = [
@@ -210,6 +259,8 @@ class TestLLMDecider(unittest.TestCase):
         self.assertIn("switch_gesture", prompt)
         self.assertIn("hold_drag_release", prompt)
         self.assertIn("repeated no-change feedback", prompt)
+        self.assertIn("detected_controls", prompt)
+        self.assertIn("control_hypothesis", prompt)
 
     def test_decision_prompt_includes_verified_progress_from_recent_actions(self):
         mission = Mission(type="free_explore", goal="Clear level", targets=["target"])
