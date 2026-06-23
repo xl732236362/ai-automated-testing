@@ -88,6 +88,20 @@ class AimController:
         return event
 
 
+class ContinuousControllerRegistry:
+    def __init__(self, controllers=None, allow_multi_touch=False):
+        self.controllers = dict(controllers or {"aim_fire": AimController})
+        self.allow_multi_touch = allow_multi_touch
+
+    def available(self):
+        return sorted(self.controllers)
+
+    def get(self, name):
+        if name not in self.controllers:
+            raise ValueError("unknown continuous controller: %s" % name)
+        return self.controllers[name]
+
+
 def _bounded_point(x, y, screen_size):
     width, height = screen_size
     return {

@@ -6,7 +6,7 @@ import os
 import tempfile
 import unittest
 
-from game_reverse.continuous_control import AimController
+from game_reverse.continuous_control import AimController, ContinuousControllerRegistry
 from game_reverse.journal import Journal
 
 
@@ -36,6 +36,19 @@ class RecordingPointerExecutor:
 
 
 class TestContinuousControl(unittest.TestCase):
+    def test_registry_exposes_only_single_pointer_aim_fire_by_default(self):
+        registry = ContinuousControllerRegistry()
+
+        self.assertEqual(registry.available(), ["aim_fire"])
+        self.assertFalse(registry.allow_multi_touch)
+        self.assertIs(registry.get("aim_fire"), AimController)
+
+    def test_registry_rejects_unknown_controller_names(self):
+        registry = ContinuousControllerRegistry()
+
+        with self.assertRaisesRegex(ValueError, "unknown continuous controller"):
+            registry.get("pinch_zoom")
+
     def test_aim_controller_holds_moves_relative_to_cursor_and_releases(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             journal = Journal.create(tmpdir, "control-session")

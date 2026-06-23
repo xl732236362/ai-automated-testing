@@ -11,7 +11,7 @@ from game_reverse.actions import validate_action
 from game_reverse.airtest_executor import AirtestExecutor
 from game_reverse.affordances import AffordanceMemory
 from game_reverse.config import load_config
-from game_reverse.continuous_control import AimController
+from game_reverse.continuous_control import ContinuousControllerRegistry
 from game_reverse.feedback import classify_feedback, derive_control_feedback, recommend_next_strategy
 from game_reverse.goal_planner import GoalPlanner
 from game_reverse.journal import Journal
@@ -34,6 +34,7 @@ def run_loop(config, executor=None, decider=None, session_name=None, context=Non
     skill_library = _create_skill_library(profile_store)
     goal_planner = _create_goal_planner(config, profile_store)
     memory_summary = _create_memory_summary(config, profile_store)
+    continuous_controllers = ContinuousControllerRegistry()
     _write_goal_artifacts(journal, profile_store, goal_planner, None)
     _emit_context_event(
         context,
@@ -186,7 +187,8 @@ def run_loop(config, executor=None, decider=None, session_name=None, context=Non
             if action["type"] == "aim_fire":
                 if not getattr(config, "enable_continuous_actions", False):
                     raise ValueError("enable_continuous_actions is required for aim_fire")
-                control_result = AimController(executor, journal, screen_size).execute(action, step)
+                controller_class = continuous_controllers.get(action["type"])
+                control_result = controller_class(executor, journal, screen_size).execute(action, step)
                 result = control_result["result"]
             else:
                 result = executor.execute(action, screen_path)
