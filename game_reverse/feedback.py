@@ -116,6 +116,21 @@ def recommend_next_strategy(feedback_history):
     return {"next_strategy": "continue", "recommended_actions": [], "reason": ""}
 
 
+def derive_control_feedback(action, feedback, recent_feedback=None):
+    action_type = (action or {}).get("type")
+    if action_type != "aim_fire":
+        return ""
+    result = (feedback or {}).get("result")
+    if result in ("counter_changed", "tray_changed", "level_completed"):
+        return "target_collected"
+    history = list(recent_feedback or [])
+    if result == "no_visible_change":
+        misses = [item for item in history[-2:] if item.get("action_type") == "aim_fire" and item.get("result") == "no_visible_change"]
+        if len(misses) >= 2:
+            return "control_attempt_failed"
+    return ""
+
+
 def _observation_text(observation):
     if not observation:
         return ""

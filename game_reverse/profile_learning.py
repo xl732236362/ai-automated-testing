@@ -82,12 +82,16 @@ def summarize_profile_memory(profile, max_lines=8):
         lines.append("active_subgoal: %s" % active_subgoal)
 
     for skill in _top_skills(_profile_skills(profile), limit=3):
+        prefix = "continuous_control" if skill.get("type") == "continuous_control" else "skill"
+        controller = " controller=%s" % skill.get("controller", "") if skill.get("controller") else ""
         lines.append(
-            "skill: %s confidence=%.2f signal=%s"
+            "%s: %s confidence=%.2f signal=%s%s"
             % (
+                prefix,
                 skill.get("name", ""),
                 float(skill.get("confidence") or 0),
                 skill.get("success_signal", ""),
+                controller,
             )
         )
 

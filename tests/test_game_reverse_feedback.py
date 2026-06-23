@@ -5,7 +5,7 @@ import os
 import tempfile
 import unittest
 
-from game_reverse.feedback import classify_feedback, recommend_next_strategy
+from game_reverse.feedback import classify_feedback, derive_control_feedback, recommend_next_strategy
 
 
 class TestGameReverseFeedback(unittest.TestCase):
@@ -160,6 +160,26 @@ class TestGameReverseFeedback(unittest.TestCase):
         self.assertEqual(failure["next_strategy"], "recover_from_failure")
         self.assertEqual(loop["next_strategy"], "switch_target")
         self.assertIn("loop", loop["reason"])
+
+    def test_derives_target_collected_for_successful_aim_fire(self):
+        control_feedback = derive_control_feedback(
+            {"type": "aim_fire"},
+            {"result": "counter_changed", "progress_delta": 1},
+        )
+
+        self.assertEqual(control_feedback, "target_collected")
+
+    def test_derives_control_attempt_failed_for_repeated_no_change_aim_fire(self):
+        control_feedback = derive_control_feedback(
+            {"type": "aim_fire"},
+            {"result": "no_visible_change"},
+            recent_feedback=[
+                {"result": "no_visible_change", "action_type": "aim_fire"},
+                {"result": "no_visible_change", "action_type": "aim_fire"},
+            ],
+        )
+
+        self.assertEqual(control_feedback, "control_attempt_failed")
 
 
 if __name__ == "__main__":

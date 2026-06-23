@@ -110,6 +110,14 @@ class TestProfileLearning(unittest.TestCase):
                 "skills": {
                     "skills": [
                         {"name": "aim_at_target", "confidence": 0.8, "success_signal": "counter_changed"}
+                        ,
+                        {
+                            "name": "continuous_aim",
+                            "type": "continuous_control",
+                            "controller": "aim_fire",
+                            "confidence": 0.7,
+                            "success_signal": "target_collected",
+                        },
                     ]
                 },
                 "recent_memory": [
@@ -130,6 +138,7 @@ class TestProfileLearning(unittest.TestCase):
 
         self.assertIn("active_subgoal: detect result state", summary)
         self.assertIn("aim_at_target", summary)
+        self.assertIn("continuous_control: continuous_aim", summary)
         self.assertIn("counter_changed", summary)
         self.assertLessEqual(len(summary.splitlines()), 5)
 

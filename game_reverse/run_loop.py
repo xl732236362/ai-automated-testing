@@ -12,7 +12,7 @@ from game_reverse.airtest_executor import AirtestExecutor
 from game_reverse.affordances import AffordanceMemory
 from game_reverse.config import load_config
 from game_reverse.continuous_control import AimController
-from game_reverse.feedback import classify_feedback, recommend_next_strategy
+from game_reverse.feedback import classify_feedback, derive_control_feedback, recommend_next_strategy
 from game_reverse.goal_planner import GoalPlanner
 from game_reverse.journal import Journal
 from game_reverse.llm_decider import ClaudeDecider
@@ -489,6 +489,11 @@ def _record_feedback_and_artifacts(
     )
     feedback["action_type"] = action_record["action"]["type"]
     feedback["state_id"] = state_update["state_id"]
+    control_feedback = derive_control_feedback(action_record.get("action"), feedback, feedback_history)
+    if control_feedback:
+        feedback["control_feedback"] = control_feedback
+        action_record["control_feedback"] = control_feedback
+        observation_record["control_feedback"] = control_feedback
     feedback_history.append(feedback)
     strategy = recommend_next_strategy(feedback_history)
     affordance_memory.record_action_feedback(
@@ -687,6 +692,7 @@ def _feedback_record(observation_record, action_record, transition, feedback, st
         "after_counts": feedback.get("after_counts", []),
         "progress_delta": feedback.get("progress_delta", 0),
         "progress_changed": feedback.get("progress_changed", False),
+        "control_feedback": feedback.get("control_feedback", ""),
         "next_strategy": strategy.get("next_strategy"),
         "recommended_actions": strategy.get("recommended_actions"),
         "recovery_reason": strategy.get("reason"),
@@ -701,6 +707,7 @@ def _profile_step_event(session_name, observation_record, action_record, transit
         "state_id": observation_record.get("state_id"),
         "action": action_record.get("action"),
         "feedback_result": feedback.get("result"),
+        "control_feedback": feedback.get("control_feedback", ""),
         "transition": transition,
         "screen": observation_record.get("screen"),
         "post_action_screen": observation_record.get("post_action_screen"),

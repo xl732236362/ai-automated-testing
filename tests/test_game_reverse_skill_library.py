@@ -156,6 +156,32 @@ class TestSkillLibrary(unittest.TestCase):
         self.assertEqual(candidates[0]["name"], "skill_from_main_menu_to_level_started")
         self.assertEqual(candidates[0]["steps"], [{"type": "tap", "x": 100, "y": 200}])
 
+    def test_mines_continuous_control_skill_from_successful_aim_fire(self):
+        library = SkillLibrary()
+
+        candidates = library.mine_candidates(
+            [
+                {
+                    "state_id": "state_level",
+                    "state": "level_gameplay",
+                    "action": {
+                        "type": "aim_fire",
+                        "control": {"x": 450, "y": 1175, "role": "fire_button"},
+                        "cursor": {"x": 500, "y": 800, "role": "crosshair"},
+                        "target": {"x": 420, "y": 760, "role": "collectible", "label": "milk carton"},
+                    },
+                    "feedback_result": "counter_changed",
+                    "control_feedback": "target_collected",
+                }
+            ]
+        )
+
+        self.assertEqual(candidates[0]["type"], "continuous_control")
+        self.assertEqual(candidates[0]["controller"], "aim_fire")
+        self.assertEqual(candidates[0]["parameters"]["target_role"], "collectible")
+        self.assertEqual(candidates[0]["success_signal"], "target_collected")
+        self.assertEqual(candidates[0]["steps"], [])
+
 
 if __name__ == "__main__":
     unittest.main()

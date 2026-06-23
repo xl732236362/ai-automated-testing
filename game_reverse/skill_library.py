@@ -27,6 +27,8 @@ class SkillLibrary:
         labels = _observation_labels(observation)
         matches = []
         for skill in self.skills:
+            if skill.get("type") == "continuous_control":
+                continue
             if skill["confidence"] < self.confidence_threshold:
                 continue
             trigger = skill.get("trigger", {})
@@ -86,6 +88,9 @@ class SkillLibrary:
             action = record.get("action")
             if not action or action.get("type") == "error":
                 continue
+            if action.get("type") == "aim_fire" and record.get("control_feedback") == "target_collected":
+                candidates.append(_continuous_control_skill(record, action))
+                continue
             candidates.append(
                 _normalize_skill(
                     {
@@ -114,6 +119,7 @@ class SkillLibrary:
 def _normalize_skill(skill):
     normalized = deepcopy(skill)
     normalized.setdefault("name", "unnamed_skill")
+    normalized.setdefault("type", "action_sequence")
     normalized.setdefault("trigger", {})
     normalized.setdefault("steps", [])
     normalized.setdefault("success_signal", "")
@@ -123,6 +129,32 @@ def _normalize_skill(skill):
     normalized.setdefault("success_count", 0)
     normalized.setdefault("failure_count", 0)
     return normalized
+
+
+def _continuous_control_skill(record, action):
+    state = record.get("state") or record.get("state_id") or "unknown"
+    target = action.get("target") or {}
+    control = action.get("control") or {}
+    cursor = action.get("cursor") or {}
+    return _normalize_skill(
+        {
+            "name": "continuous_%s_to_target_collected" % _slug(state),
+            "type": "continuous_control",
+            "controller": "aim_fire",
+            "trigger": {"state_labels": [state]},
+            "steps": [],
+            "parameters": {
+                "control_role": control.get("role", ""),
+                "cursor_role": cursor.get("role", ""),
+                "target_role": target.get("role", ""),
+                "target_label": target.get("label", ""),
+            },
+            "success_signal": "target_collected",
+            "failure_signal": "control_attempt_failed",
+            "confidence": 0.55,
+            "run_count": 0,
+        }
+    )
 
 
 def _observation_labels(observation):
